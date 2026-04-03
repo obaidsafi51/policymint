@@ -2,8 +2,10 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { apiKeyAuth } from './auth';
 
-const findFirstMock = vi.fn();
-const verifyApiKeyMock = vi.fn();
+const { findFirstMock, verifyApiKeyMock } = vi.hoisted(() => ({
+  findFirstMock: vi.fn(),
+  verifyApiKeyMock: vi.fn()
+}));
 
 vi.mock('../db/client', () => ({
   prisma: {

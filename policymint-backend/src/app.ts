@@ -2,11 +2,13 @@ import Fastify from 'fastify';
 import sensible from '@fastify/sensible';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
 import { logger } from './lib/logger';
 import { env } from './config/env';
 import { healthRoutes } from './modules/health/health.routes';
 import { agentRoutes, agentProtectedRoutes } from './modules/agents/agent.routes';
 import { policyRoutes } from './modules/policies/policy.routes';
+import { evaluateRoutes } from './modules/policy-engine/evaluate.route';
 import { apiKeyAuth } from './plugins/auth';
 
 export async function buildApp() {
@@ -28,6 +30,20 @@ export async function buildApp() {
   await app.register(cors, {
     origin: env.NODE_ENV === 'production' ? ['https://policymint.vercel.app'] : true,
     credentials: true
+  });
+
+  await app.register(rateLimit, {
+    // TODO(production): Replace default in-memory store with Redis store
+    // using @fastify/rate-limit redis option to survive service restarts.
+    // Required before multi-instance deployment.
+    max: 10,
+    timeWindow: '1 second',
+    keyGenerator: request => request.headers.authorization ?? request.ip,
+    errorResponseBuilder: (_request, context) => ({
+      statusCode: 429,
+      error: 'Too Many Requests',
+      message: `Rate limit exceeded. Max ${context.max} requests per second per agent.`
+    })
   });
 
   await app.register(sensible);
@@ -56,6 +72,7 @@ export async function buildApp() {
 
   await app.register(healthRoutes, { prefix: '/health' });
   await app.register(agentRoutes, { prefix: '/v1/agents' });
+  await app.register(evaluateRoutes, { prefix: '/v1' });
   await app.register(async protectedApp => {
     protectedApp.addHook('preHandler', apiKeyAuth);
     await protectedApp.register(agentProtectedRoutes, { prefix: '/v1/agents' });
