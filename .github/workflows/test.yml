@@ -45,18 +45,24 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+          cache-dependency-path: policymint-backend/package-lock.json
 
       - name: Install dependencies
+        working-directory: policymint-backend
         run: npm ci
 
       - name: Generate Prisma client
+        working-directory: policymint-backend
         run: npx prisma generate
 
       - name: Apply migrations
+        working-directory: policymint-backend
         run: npx prisma migrate deploy
 
       - name: Type check
+        working-directory: policymint-backend
         run: npm run typecheck
 
       - name: Run tests
+        working-directory: policymint-backend
         run: npm run test
