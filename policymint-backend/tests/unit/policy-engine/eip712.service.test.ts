@@ -126,4 +126,38 @@ describe('eip712.service', () => {
     expect(allowSignature).not.toBe(blockSignature);
     dateSpy.mockRestore();
   });
+
+  it('produces different signatures when token_out changes', async () => {
+    const dateSpy = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    const { signEvaluatedIntent } = await loadSigner();
+
+    const original = await signEvaluatedIntent({
+      intent: { ...validIntent, token_out: 'USDC' },
+      result: 'allow'
+    });
+    const changed = await signEvaluatedIntent({
+      intent: { ...validIntent, token_out: 'DAI' },
+      result: 'allow'
+    });
+
+    expect(original).not.toBe(changed);
+    dateSpy.mockRestore();
+  });
+
+  it('produces different signatures when params object changes', async () => {
+    const dateSpy = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    const { signEvaluatedIntent } = await loadSigner();
+
+    const original = await signEvaluatedIntent({
+      intent: { ...validIntent, params: { slippage_bps: 50 } },
+      result: 'allow'
+    });
+    const changed = await signEvaluatedIntent({
+      intent: { ...validIntent, params: { slippage_bps: 100 } },
+      result: 'allow'
+    });
+
+    expect(original).not.toBe(changed);
+    dateSpy.mockRestore();
+  });
 });

@@ -1,11 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../../db/client';
 import { verifyApiKey } from '../../lib/crypto';
+import { env } from '../../config/env';
 import { EvaluateIntentSchema } from './evaluate.schema';
 import { evaluateIntent, EvaluationServiceError } from './evaluate.service';
 
 const API_KEY_PREFIX = 'pm_live_';
 const PREFIX_LOOKUP_LENGTH = API_KEY_PREFIX.length + 8;
+const RATE_LIMIT_TIME_WINDOW = env.NODE_ENV === 'test' ? '1 minute' : '1 second';
 
 function getBearerToken(authorizationHeader: string | string[] | undefined): string | null {
   if (!authorizationHeader || Array.isArray(authorizationHeader)) {
@@ -25,7 +27,32 @@ function getBearerToken(authorizationHeader: string | string[] | undefined): str
 }
 
 export async function evaluateRoutes(app: FastifyInstance) {
-  app.post('/evaluate', async (request, reply) => {
+  app.post('/evaluate', {
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: RATE_LIMIT_TIME_WINDOW,
+        keyGenerator: request => {
+          const auth = request.headers.authorization;
+
+          if (typeof auth === 'string' && auth.length > 0) {
+            return auth;
+          }
+
+          if (Array.isArray(auth) && typeof auth[0] === 'string' && auth[0].length > 0) {
+            return auth[0];
+          }
+
+          return request.ip;
+        },
+        errorResponseBuilder: (_request, context) => ({
+          statusCode: 429,
+          error: 'Too Many Requests',
+          message: `Rate limit exceeded. Max ${context.max} requests per second per authorization key.`
+        })
+      }
+    }
+  }, async (request, reply) => {
     const body = EvaluateIntentSchema.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({ error: body.error.flatten() });

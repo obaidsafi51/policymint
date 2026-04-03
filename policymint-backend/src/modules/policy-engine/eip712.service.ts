@@ -1,4 +1,5 @@
 import type { Hex } from 'viem';
+import { keccak256, toBytes } from 'viem';
 import { signTypedData } from 'viem/accounts';
 import { env } from '../../config/env';
 import type { EvaluateIntentInput } from './evaluate.schema';
@@ -12,6 +13,8 @@ const tradeIntentTypes = {
     { name: 'venue', type: 'string' },
     { name: 'amount', type: 'string' },
     { name: 'token_in', type: 'string' },
+    { name: 'token_out', type: 'string' },
+    { name: 'params_hash', type: 'bytes32' },
     { name: 'result', type: 'string' },
     { name: 'timestamp', type: 'uint256' }
   ]
@@ -29,6 +32,7 @@ export async function signEvaluatedIntent(input: {
   }
 
   const timestamp = BigInt(Math.floor(Date.now() / 1000));
+  const paramsHash = keccak256(toBytes(JSON.stringify(input.intent.params ?? {})));
 
   const signature = await signTypedData({
     privateKey: env.POLICY_SIGNER_PRIVATE_KEY as Hex,
@@ -46,6 +50,8 @@ export async function signEvaluatedIntent(input: {
       venue: input.intent.venue,
       amount: input.intent.amount,
       token_in: input.intent.token_in,
+      token_out: input.intent.token_out ?? '',
+      params_hash: paramsHash,
       result: input.result,
       timestamp
     }

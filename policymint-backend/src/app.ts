@@ -36,14 +36,7 @@ export async function buildApp() {
     // TODO(production): Replace default in-memory store with Redis store
     // using @fastify/rate-limit redis option to survive service restarts.
     // Required before multi-instance deployment.
-    max: 10,
-    timeWindow: '1 second',
-    keyGenerator: request => request.headers.authorization ?? request.ip,
-    errorResponseBuilder: (_request, context) => ({
-      statusCode: 429,
-      error: 'Too Many Requests',
-      message: `Rate limit exceeded. Max ${context.max} requests per second per agent.`
-    })
+    global: false
   });
 
   await app.register(sensible);

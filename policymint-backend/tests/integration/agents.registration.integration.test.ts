@@ -192,7 +192,6 @@ describeDb('POST /v1/agents', () => {
   });
 
   it('strips unknown fields from the request body', async () => {
-    await new Promise((r) => setTimeout(r, 1100));
     const response = await app.inject({
       method: 'POST',
       url: '/v1/agents',

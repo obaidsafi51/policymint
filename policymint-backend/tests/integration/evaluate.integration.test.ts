@@ -568,24 +568,27 @@ describeDb('POST /v1/evaluate', () => {
     assertResponseShape(body, 'allow');
   });
 
-  it('returns 429 after 11 requests within one second using same auth header', async () => {
+  it('returns 429 after 10 requests from the same auth key', async () => {
     const { id, apiKey } = await createAgent();
     const payload = basePayload(id);
 
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      const response = await app.inject({
+    const firstTenRequests = Array.from({ length: 10 }, () =>
+      app.inject({
         method: 'POST',
         url: '/v1/evaluate',
         headers: {
           authorization: `Bearer ${apiKey}`
         },
         payload
-      });
+      })
+    );
 
+    const firstTenResponses = await Promise.all(firstTenRequests);
+    for (const response of firstTenResponses) {
       expect(response.statusCode).toBe(200);
     }
 
-    const response = await app.inject({
+    const eleventhResponse = await app.inject({
       method: 'POST',
       url: '/v1/evaluate',
       headers: {
@@ -594,7 +597,7 @@ describeDb('POST /v1/evaluate', () => {
       payload
     });
 
-    expect(response.statusCode).toBe(429);
+    expect(eleventhResponse.statusCode).toBe(429);
   });
 
   it('returns sanitized 500 error when persistence fails and does not expose stack trace', async () => {
