@@ -9,6 +9,7 @@ const validEnv = {
   DIRECT_URL: 'https://example.com',
   API_KEY_SALT_ROUNDS: '12',
   JWT_SECRET: 'this-is-a-long-secret-with-32-characters-min',
+  POLICY_SIGNER_PRIVATE_KEY: '0x1111111111111111111111111111111111111111111111111111111111111111',
   ALCHEMY_RPC_URL: 'https://example.com',
   BASE_SEPOLIA_RPC_FALLBACK: 'https://sepolia.base.org',
   CHAIN_ID: '84532'

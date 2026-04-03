@@ -15,6 +15,7 @@ const EnvSchema = z.object({
   DIRECT_URL: z.string().url(),
   API_KEY_SALT_ROUNDS: z.coerce.number().default(12),
   JWT_SECRET: z.string().min(32),
+  POLICY_SIGNER_PRIVATE_KEY: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
   ALCHEMY_RPC_URL: z.string().url(),
   BASE_SEPOLIA_RPC_FALLBACK: z.string().url().default('https://sepolia.base.org'),
   CHAIN_ID: z.coerce.number().default(84532),
