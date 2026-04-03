@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum StrategyType {
+  MOMENTUM
+  REBALANCING
+  CUSTOM
+}
+
+enum PolicyType {
+  VENUE_ALLOWLIST
+  SPEND_CAP_PER_TX
+  DAILY_LOSS_BUDGET
+}
+
+enum EvaluationResult {
+  ALLOW
+  BLOCK
+}
+
+enum RegistryType {
+  ERC8004
+  BASE_SEPOLIA
+}
+
+enum SignalType {
+  POSITIVE
+  NEGATIVE
+}
+
+enum ActionType {
+  SWAP
+  TRANSFER
+  BRIDGE
+  TRADE
+  CUSTOM
+}
+
+model Agent {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String
+  walletAddress     String             @map("wallet_address")
+  metadataUri       String?            @map("metadata_uri")
+  chainId           Int                @default(84532) @map("chain_id")
+  strategyType      StrategyType       @default(MOMENTUM) @map("strategy_type")
+  erc8004TokenId    String?            @map("erc8004_token_id")
+  apiKeyHash        String             @map("api_key_hash")
+  apiKeyPrefix      String             @map("api_key_prefix")
+  isActive          Boolean            @default(true) @map("is_active")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  policies          Policy[]
+  evaluations       IntentEvaluation[]
+  reputationSignals ReputationSignal[]
+
+  @@index([walletAddress])
+  @@index([apiKeyPrefix])
+  @@index([erc8004TokenId])
+  @@map("agents")
+}
+
+model Policy {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentId     String             @map("agent_id") @db.Uuid
+  type        PolicyType
+  params      Json
+  isActive    Boolean            @default(true) @map("is_active")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+  deletedAt   DateTime?          @map("deleted_at")
+  agent       Agent              @relation(fields: [agentId], references: [id])
+  evaluations IntentEvaluation[]
+
+  @@index([agentId, isActive])
+  @@index([agentId, type])
+  @@map("policies")
+}
+
+model IntentEvaluation {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentId          String           @map("agent_id") @db.Uuid
+  policyId         String?          @map("policy_id") @db.Uuid
+  actionType       ActionType       @map("action_type")
+  venue            String
+  amountRaw        String           @map("amount_raw")
+  tokenIn          String           @map("token_in")
+  tokenOut         String?          @map("token_out")
+  intentParams     Json?            @map("intent_params")
+  result           EvaluationResult
+  blockReason      String?          @map("block_reason")
+  eip712SignedIntent String?        @map("eip712_signed_intent") @db.Text
+  validationTxHash String?          @map("validation_tx_hash")
+  emittedAt        DateTime?        @map("emitted_at")
+  cycleId          String?          @map("cycle_id")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  agent            Agent            @relation(fields: [agentId], references: [id])
+  policy           Policy?          @relation(fields: [policyId], references: [id])
+  validationRecords ValidationRecord[]
+
+  @@index([agentId, createdAt(sort: Desc)])
+  @@index([agentId, result])
+  @@index([cycleId])
+  @@map("intent_evaluations")
+}
+
+model ValidationRecord {
+  id                     String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  evaluationId           String           @map("evaluation_id") @db.Uuid
+  registryType           RegistryType     @map("registry_type")
+  txHash                 String           @map("tx_hash")
+  blockNumber            BigInt?          @map("block_number")
+  emittedAt              DateTime         @default(now()) @map("emitted_at")
+  agentTokenId           String?          @map("agent_token_id")
+  strategyCheckpointHash String?          @map("strategy_checkpoint_hash")
+  evaluation             IntentEvaluation @relation(fields: [evaluationId], references: [id])
+
+  @@index([evaluationId])
+  @@index([txHash])
+  @@map("validation_records")
+}
+
+model ReputationSignal {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentId       String     @map("agent_id") @db.Uuid
+  signalType    SignalType @map("signal_type")
+  cycleId       String?    @map("cycle_id")
+  txHash        String?    @map("tx_hash")
+  emittedAt     DateTime?  @map("emitted_at")
+  scoreSnapshot Int?       @map("score_snapshot")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  agent         Agent      @relation(fields: [agentId], references: [id])
+
+  @@index([agentId, createdAt(sort: Desc)])
+  @@index([agentId, signalType])
+  @@map("reputation_signals")
+}
+
+model StrategyCycle {
+  id                 String    @id @map("id")
+  agentId            String    @map("agent_id") @db.Uuid
+  strategyType       String    @map("strategy_type")
+  startedAt          DateTime  @default(now()) @map("started_at")
+  completedAt        DateTime? @map("completed_at")
+  openPriceUsd       Decimal?  @map("open_price_usd") @db.Decimal(20, 8)
+  closePriceUsd      Decimal?  @map("close_price_usd") @db.Decimal(20, 8)
+  pnlUsd             Decimal?  @map("pnl_usd") @db.Decimal(20, 8)
+  baselineComparison Decimal?  @map("baseline_comparison") @db.Decimal(20, 8)
+  signalData         Json?     @map("signal_data")
+
+  @@index([agentId, startedAt(sort: Desc)])
+  @@map("strategy_cycles")
+}
