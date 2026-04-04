@@ -19,6 +19,8 @@ const EnvSchema = z.object({
   ALCHEMY_RPC_URL: z.string().url(),
   BASE_SEPOLIA_RPC_FALLBACK: z.string().url().default('https://sepolia.base.org'),
   CHAIN_ID: z.coerce.number().default(11155111),
+  RISK_ROUTER_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+  HACKATHON_VAULT_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
   IDENTITY_REGISTRY_ADDRESS: z.preprocess(emptyToUndefined, z.string().startsWith('0x').optional()),
   VALIDATION_REGISTRY_ADDRESS: z.preprocess(
     emptyToUndefined,

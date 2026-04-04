@@ -13,6 +13,8 @@ const validEnv = {
   ALCHEMY_RPC_URL: 'https://example.com',
   BASE_SEPOLIA_RPC_FALLBACK: 'https://sepolia.base.org',
   CHAIN_ID: '11155111',
+  RISK_ROUTER_ADDRESS: '0xd6A6952545FF6E6E6681c2d15C59f9EB8F40FdBC',
+  HACKATHON_VAULT_ADDRESS: '0x0E7CD8ef9743FEcf94f9103033a044caBD45fC90',
 };
 
 async function importEnvModule() {
