@@ -21,9 +21,9 @@ async function main() {
   });
 
   try {
-    await app.listen({ 
-      port: Number(process.env.PORT) || 3000, 
-      host: '0.0.0.0' 
+    await app.listen({
+      port: env.PORT,
+      host: '0.0.0.0',
     });
     app.log.info(`PolicyMint backend running on port ${env.PORT}`);
   } catch (err) {

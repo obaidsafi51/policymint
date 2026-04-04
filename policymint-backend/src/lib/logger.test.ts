@@ -17,7 +17,7 @@ describe('logger', () => {
       write(chunk, _encoding, callback) {
         output += chunk.toString();
         callback();
-      }
+      },
     });
 
     const testLogger = createLogger(destination);
@@ -27,7 +27,7 @@ describe('logger', () => {
     expect(parsed).toMatchObject({
       service: 'policymint-backend',
       env: process.env.NODE_ENV,
-      msg: 'test message'
+      msg: 'test message',
     });
   });
 });

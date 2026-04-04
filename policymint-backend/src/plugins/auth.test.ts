@@ -4,25 +4,25 @@ import { apiKeyAuth } from './auth';
 
 const { findFirstMock, verifyApiKeyMock } = vi.hoisted(() => ({
   findFirstMock: vi.fn(),
-  verifyApiKeyMock: vi.fn()
+  verifyApiKeyMock: vi.fn(),
 }));
 
 vi.mock('../db/client', () => ({
   prisma: {
     agent: {
-      findFirst: findFirstMock
-    }
-  }
+      findFirst: findFirstMock,
+    },
+  },
 }));
 
 vi.mock('../lib/crypto', () => ({
-  verifyApiKey: verifyApiKeyMock
+  verifyApiKey: verifyApiKeyMock,
 }));
 
 function createReplyMock() {
   return {
     status: vi.fn().mockReturnThis(),
-    send: vi.fn().mockReturnThis()
+    send: vi.fn().mockReturnThis(),
   } as unknown as FastifyReply & {
     status: ReturnType<typeof vi.fn>;
     send: ReturnType<typeof vi.fn>;
@@ -32,8 +32,8 @@ function createReplyMock() {
 function createRequestMock(authorization?: string) {
   return {
     headers: {
-      ...(authorization ? { authorization } : {})
-    }
+      ...(authorization ? { authorization } : {}),
+    },
   } as FastifyRequest;
 }
 
@@ -56,7 +56,7 @@ describe('apiKeyAuth', () => {
       apiKeyPrefix: 'pm_live_12345678',
       isActive: true,
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
     };
 
     findFirstMock.mockResolvedValue(agent);
@@ -68,7 +68,7 @@ describe('apiKeyAuth', () => {
     await apiKeyAuth(request, reply);
 
     expect(findFirstMock).toHaveBeenCalledWith({
-      where: { apiKeyPrefix: 'pm_live_12345678', isActive: true }
+      where: { apiKeyPrefix: 'pm_live_12345678', isActive: true },
     });
     expect(verifyApiKeyMock).toHaveBeenCalledWith(token, 'hashed');
     expect(reply.status).not.toHaveBeenCalled();
@@ -113,7 +113,7 @@ describe('apiKeyAuth', () => {
       apiKeyPrefix: 'pm_live_12345678',
       isActive: true,
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
     };
 
     findFirstMock.mockResolvedValue(agent);

@@ -2,7 +2,6 @@ generator client {
   provider = "prisma-client-js"
 }
 
-
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
@@ -85,25 +84,25 @@ model Policy {
 }
 
 model IntentEvaluation {
-  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  agentId          String           @map("agent_id") @db.Uuid
-  policyId         String?          @map("policy_id") @db.Uuid
-  actionType       ActionType       @map("action_type")
-  venue            String
-  amountRaw        String           @map("amount_raw")
-  tokenIn          String           @map("token_in")
-  tokenOut         String?          @map("token_out")
-  intentParams     Json?            @map("intent_params")
-  result           EvaluationResult
-  blockReason      String?          @map("block_reason")
-  eip712SignedIntent String?        @map("eip712_signed_intent") @db.Text
-  validationTxHash String?          @map("validation_tx_hash")
-  emittedAt        DateTime?        @map("emitted_at")
-  cycleId          String?          @map("cycle_id")
-  createdAt        DateTime         @default(now()) @map("created_at")
-  agent            Agent            @relation(fields: [agentId], references: [id])
-  policy           Policy?          @relation(fields: [policyId], references: [id])
-  validationRecords ValidationRecord[]
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentId            String             @map("agent_id") @db.Uuid
+  policyId           String?            @map("policy_id") @db.Uuid
+  actionType         ActionType         @map("action_type")
+  venue              String
+  amountRaw          String             @map("amount_raw")
+  tokenIn            String             @map("token_in")
+  tokenOut           String?            @map("token_out")
+  intentParams       Json?              @map("intent_params")
+  result             EvaluationResult
+  blockReason        String?            @map("block_reason")
+  eip712SignedIntent String?            @map("eip712_signed_intent") @db.Text
+  validationTxHash   String?            @map("validation_tx_hash")
+  emittedAt          DateTime?          @map("emitted_at")
+  cycleId            String?            @map("cycle_id")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  agent              Agent              @relation(fields: [agentId], references: [id])
+  policy             Policy?            @relation(fields: [policyId], references: [id])
+  validationRecords  ValidationRecord[]
 
   @@index([agentId, createdAt(sort: Desc)])
   @@index([agentId, result])

@@ -8,9 +8,9 @@ export function createLogger(destination?: pino.DestinationStream) {
       ...(env.NODE_ENV !== 'production' && !destination
         ? { transport: { target: 'pino-pretty', options: { colorize: true } } }
         : {}),
-      base: { service: 'policymint-backend', env: env.NODE_ENV }
+      base: { service: 'policymint-backend', env: env.NODE_ENV },
     },
-    destination
+    destination,
   );
 }
 

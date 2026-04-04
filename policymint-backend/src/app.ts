@@ -18,25 +18,25 @@ export async function buildApp() {
       customOptions: {
         removeAdditional: true,
         coerceTypes: false,
-        allErrors: true
-      }
-    }
+        allErrors: true,
+      },
+    },
   });
 
   await app.register(helmet, {
-    contentSecurityPolicy: env.NODE_ENV === 'production'
+    contentSecurityPolicy: env.NODE_ENV === 'production',
   });
 
   await app.register(cors, {
     origin: env.NODE_ENV === 'production' ? ['https://policymint.vercel.app'] : true,
-    credentials: true
+    credentials: true,
   });
 
   await app.register(rateLimit, {
     // TODO(production): Replace default in-memory store with Redis store
     // using @fastify/rate-limit redis option to survive service restarts.
     // Required before multi-instance deployment.
-    global: false
+    global: false,
   });
 
   await app.register(sensible);
@@ -47,26 +47,26 @@ export async function buildApp() {
     if ((error as { validation?: unknown }).validation) {
       return reply.status(422).send({
         error: 'Validation Error',
-        details: (error as { validation: unknown }).validation
+        details: (error as { validation: unknown }).validation,
       });
     }
 
     const typedError = error instanceof Error ? error : new Error('Unknown error');
     const statusCode =
       typeof (error as { statusCode?: unknown }).statusCode === 'number'
-        ? ((error as { statusCode: number }).statusCode)
+        ? (error as { statusCode: number }).statusCode
         : 500;
 
     return reply.status(statusCode).send({
       error: statusCode >= 500 ? 'Internal Server Error' : typedError.message,
-      ...(env.NODE_ENV !== 'production' && { stack: typedError.stack })
+      ...(env.NODE_ENV !== 'production' && { stack: typedError.stack }),
     });
   });
-  
+
   await app.register(healthRoutes, { prefix: '/health' });
   await app.register(agentRoutes, { prefix: '/v1/agents' });
   await app.register(evaluateRoutes, { prefix: '/v1' });
-  await app.register(async protectedApp => {
+  await app.register(async (protectedApp) => {
     protectedApp.addHook('preHandler', apiKeyAuth);
     await protectedApp.register(agentProtectedRoutes, { prefix: '/v1/agents' });
     await protectedApp.register(policyRoutes, { prefix: '/v1/policies' });

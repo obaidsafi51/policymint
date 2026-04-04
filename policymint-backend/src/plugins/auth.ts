@@ -33,8 +33,8 @@ export async function apiKeyAuth(request: FastifyRequest, reply: FastifyReply) {
   const agent = await prisma.agent.findFirst({
     where: {
       apiKeyPrefix,
-      isActive: true
-    }
+      isActive: true,
+    },
   });
 
   if (!agent) {

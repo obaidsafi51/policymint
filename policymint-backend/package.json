@@ -9,7 +9,6 @@
     "node": ">=22.0.0",
     "npm": ">=10.0.0"
   },
-
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc --project tsconfig.build.json",
@@ -25,7 +24,8 @@
     "db:push": "dotenv -e .env -- prisma db push",
     "db:studio": "dotenv -e .env -- prisma studio",
     "db:seed": "dotenv -e .env -- tsx prisma/seed.ts",
-    "db:reset": "dotenv -e .env -- prisma migrate reset --force"
+    "db:reset": "dotenv -e .env -- prisma migrate reset --force",
+    "format": "prettier --write src/**/*.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
@@ -38,18 +38,18 @@
     "fastify": "^5.3.2",
     "pino": "^9.8.0",
     "pino-pretty": "^11.3.0",
+    "prisma": "^6.6.0",
     "uuidv7": "^1.2.1",
     "viem": "^2.23.14",
-    "zod": "^3.24.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
     "@tsconfig/node22": "^22.0.0",
     "@types/bcrypt": "^5.0.2",
     "@types/node": "^22.15.0",
-    "@types/supertest": "^6.0.3"
-  },
-  "devDependencies": {
-    
+    "@types/supertest": "^6.0.3",
     "dotenv-cli": "^8.0.0",
-    "prisma": "^6.6.0",
+    "prettier": "^3.8.1",
     "supertest": "^7.1.1",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3",
