@@ -18,7 +18,7 @@ describeDb('POST /v1/evaluate', () => {
         name,
         walletAddress: '0xabcdef0123456789abcdef0123456789abcdef01',
         strategyType: 'MOMENTUM',
-        chainId: 84532,
+        chainId: 11155111,
         apiKeyHash: apiKey.hash,
         apiKeyPrefix: apiKey.prefix
       }
@@ -38,7 +38,7 @@ describeDb('POST /v1/evaluate', () => {
       eip712_domain: {
         name: 'PolicyMint',
         version: '1',
-        chainId: 84532,
+        chainId: 11155111,
         verifyingContract: '0x0000000000000000000000000000000000000000'
       },
       params: {},
@@ -217,7 +217,7 @@ describeDb('POST /v1/evaluate', () => {
         eip712_domain: {
           name: 'PolicyMint',
           version: '1',
-          chainId: '84532',
+          chainId: '11155111',
           verifyingContract: '0x0000000000000000000000000000000000000000'
         }
       })

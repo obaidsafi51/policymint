@@ -12,7 +12,7 @@ CREATE TABLE "agents" (
   "name" TEXT NOT NULL,
   "wallet_address" TEXT NOT NULL,
   "metadata_uri" TEXT,
-  "chain_id" INTEGER NOT NULL DEFAULT 84532,
+  "chain_id" INTEGER NOT NULL DEFAULT 11155111,
   "strategy_type" "StrategyType" NOT NULL DEFAULT 'MOMENTUM',
   "erc8004_token_id" TEXT,
   "api_key_hash" TEXT NOT NULL,

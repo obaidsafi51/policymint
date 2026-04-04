@@ -18,7 +18,7 @@ describeDb('GET /v1/agents/:id', () => {
         name: 'Auth Agent',
         walletAddress: '0xabcdef0123456789abcdef0123456789abcdef01',
         strategyType: 'MOMENTUM',
-        chainId: 84532,
+        chainId: 11155111,
         apiKeyHash: authKey.hash,
         apiKeyPrefix: authKey.prefix
       }
@@ -65,7 +65,7 @@ describeDb('GET /v1/agents/:id', () => {
         name: 'Seeded Agent',
         walletAddress: '0xabcdef0123456789abcdef0123456789abcdef01',
         strategyType: 'MOMENTUM',
-        chainId: 84532,
+        chainId: 11155111,
         apiKeyHash: apiKey.hash,
         apiKeyPrefix: apiKey.prefix
       }
@@ -83,7 +83,7 @@ describeDb('GET /v1/agents/:id', () => {
     expect(body.name).toBe('Seeded Agent');
     expect(body.walletAddress).toBe('0xabcdef0123456789abcdef0123456789abcdef01');
     expect(body.strategyType).toBe('MOMENTUM');
-    expect(body.chainId).toBe(84532);
+    expect(body.chainId).toBe(11155111);
     expect(body.isActive).toBe(true);
     expect(body.createdAt).toBeTypeOf('string');
     expect(body._count).toEqual({ policies: 0, evaluations: 0 });
@@ -120,7 +120,7 @@ describeDb('GET /v1/agents/:id', () => {
         name: 'Sensitive Test Agent',
         walletAddress: '0xabcdef0123456789abcdef0123456789abcdef01',
         strategyType: 'MOMENTUM',
-        chainId: 84532,
+        chainId: 11155111,
         apiKeyHash: apiKey.hash,
         apiKeyPrefix: apiKey.prefix
       }

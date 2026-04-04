@@ -4,7 +4,7 @@ import { signTypedData } from 'viem/accounts';
 import { env } from '../../config/env';
 import type { EvaluateIntentInput } from './evaluate.schema';
 
-const ALLOWED_CHAIN_IDS = [84532];
+const ALLOWED_CHAIN_IDS = [11155111];
 
 const tradeIntentTypes = {
   TradeIntent: [

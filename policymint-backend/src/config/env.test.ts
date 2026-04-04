@@ -12,7 +12,7 @@ const validEnv = {
   POLICY_SIGNER_PRIVATE_KEY: '0x1111111111111111111111111111111111111111111111111111111111111111',
   ALCHEMY_RPC_URL: 'https://example.com',
   BASE_SEPOLIA_RPC_FALLBACK: 'https://sepolia.base.org',
-  CHAIN_ID: '84532',
+  CHAIN_ID: '11155111',
 };
 
 async function importEnvModule() {
@@ -73,7 +73,7 @@ describe('env config', () => {
 
     const { env } = await importEnvModule();
     expect(env.PORT).toBe(3000);
-    expect(env.CHAIN_ID).toBe(84532);
+    expect(env.CHAIN_ID).toBe(11155111);
     expect(env.BASE_SEPOLIA_RPC_FALLBACK).toBe('https://sepolia.base.org');
   });
 
