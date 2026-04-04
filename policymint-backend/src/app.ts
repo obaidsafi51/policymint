@@ -63,7 +63,7 @@ export async function buildApp() {
     });
   });
 
-  await app.register(healthRoutes, { prefix: '/health' });
+  await app.register(healthRoutes);
   await app.register(agentRoutes, { prefix: '/v1/agents' });
   await app.register(evaluateRoutes, { prefix: '/v1' });
   await app.register(async (protectedApp) => {

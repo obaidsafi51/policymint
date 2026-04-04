@@ -1,6 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app';
-import { prisma } from '../../src/db/client';
 import { describeDb } from '../helpers/db';
 
 describeDb('GET /health', () => {
@@ -12,30 +11,31 @@ describeDb('GET /health', () => {
   });
 
   afterAll(async () => {
-    vi.restoreAllMocks();
     await app.close();
   });
 
-  it('returns 200 when database is healthy', async () => {
-    const response = await app.inject({ method: 'GET', url: '/health' });
+  it('returns 200 for root liveness endpoint', async () => {
+    const response = await app.inject({ method: 'GET', url: '/' });
     const body = response.json();
 
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toContain('application/json');
     expect(body.status).toBe('ok');
-    expect(body.db).toBe('connected');
+    expect(body.service).toBe('policymint-api');
+    expect(typeof body.version).toBe('string');
     expect(Number.isNaN(Date.parse(body.timestamp))).toBe(false);
+    expect(typeof body.environment).toBe('string');
   });
 
-  it('returns 503 when database query fails', async () => {
-    vi.spyOn(prisma, '$queryRaw').mockRejectedValueOnce(new Error('db down'));
-
+  it('returns 200 for /health liveness endpoint', async () => {
     const response = await app.inject({ method: 'GET', url: '/health' });
     const body = response.json();
 
-    expect(response.statusCode).toBe(503);
-    expect(body.status).toBe('error');
-    expect(body.db).toBe('disconnected');
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toContain('application/json');
+    expect(body.status).toBe('healthy');
+    expect(typeof body.uptime).toBe('number');
+    expect(body.uptime).toBeGreaterThanOrEqual(0);
   });
 
   it('rejects unsupported HTTP methods', async () => {

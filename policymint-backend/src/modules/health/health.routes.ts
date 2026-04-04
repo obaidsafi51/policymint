@@ -1,17 +1,20 @@
 import { FastifyInstance } from 'fastify';
-import { prisma } from '../../db/client';
 
 export async function healthRoutes(app: FastifyInstance) {
   app.get('/', async (_request, reply) => {
-    try {
-      await prisma.$queryRaw`SELECT 1`;
-      return reply.send({
-        status: 'ok',
-        db: 'connected',
-        timestamp: new Date().toISOString()
-      });
-    } catch {
-      return reply.status(503).send({ status: 'error', db: 'disconnected' });
-    }
+    return reply.code(200).send({
+      status: 'ok',
+      service: 'policymint-api',
+      version: process.env.npm_package_version ?? '0.0.1',
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV ?? 'production',
+    });
+  });
+
+  app.get('/health', async (_request, reply) => {
+    return reply.code(200).send({
+      status: 'healthy',
+      uptime: Math.floor(process.uptime()),
+    });
   });
 }
