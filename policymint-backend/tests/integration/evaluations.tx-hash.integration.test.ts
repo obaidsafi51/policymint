@@ -81,7 +81,7 @@ describeDb('PATCH /v1/evaluations/:id/tx-hash', () => {
     expect(response.json().error).toBe('UNAUTHORIZED');
   });
 
-  it('returns 400 when evaluation id is not a valid UUID', async () => {
+  it('returns 422 when evaluation id is not a valid UUID', async () => {
     const response = await app.inject({
       method: 'PATCH',
       url: '/v1/evaluations/not-a-uuid/tx-hash',
@@ -93,11 +93,11 @@ describeDb('PATCH /v1/evaluations/:id/tx-hash', () => {
       }
     });
 
-    expect(response.statusCode).toBe(400);
-    expect(response.json().error).toBe('INVALID_PARAMS');
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error).toBe('Validation Error');
   });
 
-  it('returns 400 when tx_hash is malformed', async () => {
+  it('returns 422 when tx_hash is malformed', async () => {
     const { id: agentId } = await createAgent();
     const { id: evaluationId } = await createEvaluation(agentId);
 
@@ -112,8 +112,8 @@ describeDb('PATCH /v1/evaluations/:id/tx-hash', () => {
       }
     });
 
-    expect(response.statusCode).toBe(400);
-    expect(response.json().error).toBe('INVALID_BODY');
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error).toBe('Validation Error');
   });
 
   it('returns 404 when evaluation does not exist', async () => {
