@@ -11,10 +11,11 @@ const validEnv = {
   JWT_SECRET: 'this-is-a-long-secret-with-32-characters-min',
   POLICY_SIGNER_PRIVATE_KEY: '0x1111111111111111111111111111111111111111111111111111111111111111',
   ALCHEMY_RPC_URL: 'https://example.com',
-  BASE_SEPOLIA_RPC_FALLBACK: 'https://sepolia.base.org',
+  SEPOLIA_RPC_FALLBACK: 'https://ethereum-sepolia-rpc.publicnode.com/',
   CHAIN_ID: '11155111',
   RISK_ROUTER_ADDRESS: '0xd6A6952545FF6E6E6681c2d15C59f9EB8F40FdBC',
   HACKATHON_VAULT_ADDRESS: '0x0E7CD8ef9743FEcf94f9103033a044caBD45fC90',
+  INTERNAL_SERVICE_KEY: 'test-internal-service-key-at-least-32-characters',
 };
 
 async function importEnvModule() {

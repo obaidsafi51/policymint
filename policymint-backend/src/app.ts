@@ -9,6 +9,7 @@ import { healthRoutes } from './modules/health/health.routes';
 import { agentRoutes, agentProtectedRoutes } from './modules/agents/agent.routes';
 import { policyRoutes } from './modules/policies/policy.routes';
 import { evaluateRoutes } from './modules/policy-engine/evaluate.route';
+import { evaluationTxHashRoutes } from './modules/policy-engine/evaluation-tx-hash.route';
 import { apiKeyAuth } from './plugins/auth';
 
 export async function buildApp() {
@@ -66,6 +67,7 @@ export async function buildApp() {
   await app.register(healthRoutes);
   await app.register(agentRoutes, { prefix: '/v1/agents' });
   await app.register(evaluateRoutes, { prefix: '/v1' });
+  await app.register(evaluationTxHashRoutes, { prefix: '/v1' });
   await app.register(async (protectedApp) => {
     protectedApp.addHook('preHandler', apiKeyAuth);
     await protectedApp.register(agentProtectedRoutes, { prefix: '/v1/agents' });
