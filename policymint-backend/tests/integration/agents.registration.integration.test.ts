@@ -188,7 +188,7 @@ describeDb('POST /v1/agents', () => {
 
     expect(response.statusCode).toBe(201);
     expect(body.agent.strategyType).toBe('MOMENTUM');
-    expect(body.agent.chainId).toBe(84532);
+    expect(body.agent.chainId).toBe(11155111);
   });
 
   it('strips unknown fields from the request body', async () => {

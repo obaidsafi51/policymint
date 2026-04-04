@@ -18,7 +18,7 @@ const EnvSchema = z.object({
   POLICY_SIGNER_PRIVATE_KEY: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
   ALCHEMY_RPC_URL: z.string().url(),
   BASE_SEPOLIA_RPC_FALLBACK: z.string().url().default('https://sepolia.base.org'),
-  CHAIN_ID: z.coerce.number().default(84532),
+  CHAIN_ID: z.coerce.number().default(11155111),
   IDENTITY_REGISTRY_ADDRESS: z.preprocess(emptyToUndefined, z.string().startsWith('0x').optional()),
   VALIDATION_REGISTRY_ADDRESS: z.preprocess(
     emptyToUndefined,
