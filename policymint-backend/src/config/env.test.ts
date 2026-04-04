@@ -12,7 +12,7 @@ const validEnv = {
   POLICY_SIGNER_PRIVATE_KEY: '0x1111111111111111111111111111111111111111111111111111111111111111',
   ALCHEMY_RPC_URL: 'https://example.com',
   BASE_SEPOLIA_RPC_FALLBACK: 'https://sepolia.base.org',
-  CHAIN_ID: '84532'
+  CHAIN_ID: '84532',
 };
 
 async function importEnvModule() {
@@ -42,7 +42,9 @@ describe('env config', () => {
 
   it('exits when a required variable is missing', async () => {
     delete process.env.DATABASE_URL;
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: string | number | null) => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((
+      code?: string | number | null,
+    ) => {
       throw new Error(`process.exit:${code}`);
     }) as never);
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -53,7 +55,9 @@ describe('env config', () => {
 
   it('exits when a URL field is malformed', async () => {
     process.env.DATABASE_URL = 'not-a-url';
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: string | number | null) => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((
+      code?: string | number | null,
+    ) => {
       throw new Error(`process.exit:${code}`);
     }) as never);
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -75,7 +79,9 @@ describe('env config', () => {
 
   it('rejects unsupported NODE_ENV values', async () => {
     process.env.NODE_ENV = 'staging';
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: string | number | null) => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((
+      code?: string | number | null,
+    ) => {
       throw new Error(`process.exit:${code}`);
     }) as never);
     vi.spyOn(console, 'error').mockImplementation(() => {});

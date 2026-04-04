@@ -20,11 +20,17 @@ const EnvSchema = z.object({
   BASE_SEPOLIA_RPC_FALLBACK: z.string().url().default('https://sepolia.base.org'),
   CHAIN_ID: z.coerce.number().default(84532),
   IDENTITY_REGISTRY_ADDRESS: z.preprocess(emptyToUndefined, z.string().startsWith('0x').optional()),
-  VALIDATION_REGISTRY_ADDRESS: z.preprocess(emptyToUndefined, z.string().startsWith('0x').optional()),
-  REPUTATION_REGISTRY_ADDRESS: z.preprocess(emptyToUndefined, z.string().startsWith('0x').optional()),
+  VALIDATION_REGISTRY_ADDRESS: z.preprocess(
+    emptyToUndefined,
+    z.string().startsWith('0x').optional(),
+  ),
+  REPUTATION_REGISTRY_ADDRESS: z.preprocess(
+    emptyToUndefined,
+    z.string().startsWith('0x').optional(),
+  ),
   SENTRY_DSN: z.preprocess(emptyToUndefined, z.string().url().optional()),
   KRAKEN_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
-  KRAKEN_API_SECRET: z.preprocess(emptyToUndefined, z.string().optional())
+  KRAKEN_API_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
