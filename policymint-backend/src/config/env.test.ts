@@ -13,6 +13,8 @@ const validEnv = {
   ALCHEMY_RPC_URL: 'https://example.com',
   BASE_SEPOLIA_RPC_FALLBACK: 'https://sepolia.base.org',
   CHAIN_ID: '11155111',
+  RISK_ROUTER_ADDRESS: '0xd6A6952545FF6E6E6681c2d15C59f9EB8F40FdBC',
+  HACKATHON_VAULT_ADDRESS: '0x0E7CD8ef9743FEcf94f9103033a044caBD45fC90',
 };
 
 async function importEnvModule() {
@@ -74,7 +76,7 @@ describe('env config', () => {
     const { env } = await importEnvModule();
     expect(env.PORT).toBe(3000);
     expect(env.CHAIN_ID).toBe(11155111);
-    expect(env.BASE_SEPOLIA_RPC_FALLBACK).toBe('https://sepolia.base.org');
+    expect(env.SEPOLIA_RPC_FALLBACK).toBe('https://ethereum-sepolia-rpc.publicnode.com/');
   });
 
   it('rejects unsupported NODE_ENV values', async () => {
