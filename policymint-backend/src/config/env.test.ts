@@ -76,7 +76,7 @@ describe('env config', () => {
     const { env } = await importEnvModule();
     expect(env.PORT).toBe(3000);
     expect(env.CHAIN_ID).toBe(11155111);
-    expect(env.BASE_SEPOLIA_RPC_FALLBACK).toBe('https://sepolia.base.org');
+    expect(env.SEPOLIA_RPC_FALLBACK).toBe('https://ethereum-sepolia-rpc.publicnode.com/');
   });
 
   it('rejects unsupported NODE_ENV values', async () => {

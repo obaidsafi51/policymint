@@ -7,8 +7,8 @@ const REQUIRED_ENV: Record<string, string> = {
   API_KEY_SALT_ROUNDS: '4',
   JWT_SECRET: 'test-jwt-secret-at-least-32-characters-long',
   POLICY_SIGNER_PRIVATE_KEY: '0x1111111111111111111111111111111111111111111111111111111111111111',
-  ALCHEMY_RPC_URL: 'https://base-sepolia.g.alchemy.com/v2/test',
-  BASE_SEPOLIA_RPC_FALLBACK: 'https://sepolia.base.org',
+  ALCHEMY_RPC_URL: 'https://eth-sepolia.g.alchemy.com/v2/test',
+  SEPOLIA_RPC_FALLBACK: 'https://ethereum-sepolia-rpc.publicnode.com',
   CHAIN_ID: '11155111',
   RISK_ROUTER_ADDRESS: '0xd6A6952545FF6E6E6681c2d15C59f9EB8F40FdBC',
   HACKATHON_VAULT_ADDRESS: '0x0E7CD8ef9743FEcf94f9103033a044caBD45fC90'
