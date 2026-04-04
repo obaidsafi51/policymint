@@ -62,7 +62,7 @@ export async function buildApp() {
       ...(env.NODE_ENV !== 'production' && { stack: typedError.stack })
     });
   });
-
+  
   await app.register(healthRoutes, { prefix: '/health' });
   await app.register(agentRoutes, { prefix: '/v1/agents' });
   await app.register(evaluateRoutes, { prefix: '/v1' });

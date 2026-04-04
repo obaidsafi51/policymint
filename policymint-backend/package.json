@@ -9,6 +9,7 @@
     "node": ">=22.0.0",
     "npm": ">=10.0.0"
   },
+
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc --project tsconfig.build.json",
@@ -39,13 +40,14 @@
     "pino-pretty": "^11.3.0",
     "uuidv7": "^1.2.1",
     "viem": "^2.23.14",
-    "zod": "^3.24.2"
-  },
-  "devDependencies": {
+    "zod": "^3.24.2",
     "@tsconfig/node22": "^22.0.0",
     "@types/bcrypt": "^5.0.2",
     "@types/node": "^22.15.0",
-    "@types/supertest": "^6.0.3",
+    "@types/supertest": "^6.0.3"
+  },
+  "devDependencies": {
+    
     "dotenv-cli": "^8.0.0",
     "prisma": "^6.6.0",
     "supertest": "^7.1.1",
