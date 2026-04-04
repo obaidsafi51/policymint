@@ -17,10 +17,12 @@ const EnvSchema = z.object({
   JWT_SECRET: z.string().min(32),
   POLICY_SIGNER_PRIVATE_KEY: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
   ALCHEMY_RPC_URL: z.string().url(),
+
   SEPOLIA_RPC_FALLBACK: z.string().url().default('https://ethereum-sepolia-rpc.publicnode.com/'),
   CHAIN_ID: z.coerce.number().default(11155111),
   RISK_ROUTER_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
   HACKATHON_VAULT_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+  INTERNAL_SERVICE_KEY: z.preprocess(emptyToUndefined, z.string().min(32).optional()),
   IDENTITY_REGISTRY_ADDRESS: z.preprocess(emptyToUndefined, z.string().startsWith('0x').optional()),
   VALIDATION_REGISTRY_ADDRESS: z.preprocess(
     emptyToUndefined,

@@ -10,7 +10,8 @@ const testEnvDefaults: Record<string, string> = {
   SEPOLIA_RPC_FALLBACK: 'https://ethereum-sepolia-rpc.publicnode.com/',
   CHAIN_ID: '11155111',
   RISK_ROUTER_ADDRESS: '0xd6A6952545FF6E6E6681c2d15C59f9EB8F40FdBC',
-  HACKATHON_VAULT_ADDRESS: '0x0E7CD8ef9743FEcf94f9103033a044caBD45fC90'
+  HACKATHON_VAULT_ADDRESS: '0x0E7CD8ef9743FEcf94f9103033a044caBD45fC90',
+  INTERNAL_SERVICE_KEY: 'test-internal-service-key-at-least-32-characters'
 };
 
 for (const [key, value] of Object.entries(testEnvDefaults)) {
