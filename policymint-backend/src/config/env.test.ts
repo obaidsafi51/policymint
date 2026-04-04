@@ -72,7 +72,7 @@ describe('env config', () => {
   it('applies default values', async () => {
     delete process.env.PORT;
     delete process.env.CHAIN_ID;
-    delete process.env.BASE_SEPOLIA_RPC_FALLBACK;
+    delete process.env.SEPOLIA_RPC_FALLBACK;
 
     const { env } = await importEnvModule();
     expect(env.PORT).toBe(3000);
