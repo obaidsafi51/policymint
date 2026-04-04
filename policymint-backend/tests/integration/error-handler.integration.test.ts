@@ -120,7 +120,7 @@ describe('global error handler', () => {
 
     expect(first.statusCode).toBe(500);
     expect(second.statusCode).toBe(200);
-    expect(secondBody.status).toBe('ok');
+    expect(secondBody.status).toBe('healthy');
 
     await app.close();
   });
