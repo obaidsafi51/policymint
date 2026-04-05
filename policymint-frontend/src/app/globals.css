@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-page: #F3F7F6;
+  --bg-card: #ffffff;
+  --bg-surface: #E4EDEA;
+  --bg-elevated: rgba(255, 255, 255, 0.8);
+  --bg-brand: #E6FBF3; /* Brand Mint */
+  --bg-success: #ECFDF5; /* Success Emerald */
+  --bg-danger: #FDE8EE;
+  --bg-warning: #FEF4E0;
+  --bg-info: #E8EFF8;
+
+  --text-primary: #1A1A1A;
+  --text-secondary: #4A6E62;
+  --text-tertiary: #7EAA9A;
+  --text-brand: #10b981;
+  --text-success: #16a34a;
+  --text-danger: #C42B50;
+  --text-warning: #A0700A;
+  --text-info: #2D6AA0;
+  --text-on-brand: #064430;
+
+  --border-default: #C8D8D3;
+  --border-hover: #7EAA9A;
+  --border-focus: #34d399;
+  --border-success: #22c55e;
+  --border-danger: #e74c6f;
+}
+
+.dark {
+  --bg-page: #0a1210;
+  --bg-card: #243d35;
+  --bg-surface: #243D35;
+  --bg-elevated: rgba(36, 61, 53, 0.8);
+  --bg-brand: #34d399;
+  --bg-success: #22c55e;
+  --bg-danger: #e74c6f;
+  --bg-warning: #f59e0b;
+  --bg-info: #3b82f6;
+
+  --text-primary: #E4EDEA;
+  --text-secondary: #7EAA9A;
+  --text-tertiary: #4A6E62;
+  --text-brand: #34d399;
+  --text-success: #22c55e;
+  --text-danger: #e74c6f;
+  --text-warning: #f59e0b;
+  --text-info: #3b82f6;
+  --text-on-brand: #064430;
+
+  --border-default: #243D35;
+  --border-hover: #4A6E62;
+  --border-focus: #34d399;
+  --border-success: #22c55e;
+  --border-danger: #e74c6f;
+}
+
+body {
+  color: var(--text-primary);
+  background: var(--bg-page);
+  /* The layout should use JetBrains Mono for on-chain, Inter for general text */
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .border-0\.5 {
+    border-width: 0.5px;
+  }
+}

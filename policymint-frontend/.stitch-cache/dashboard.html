@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PolicyMint | Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "error-container": "#93000a",
+                        "tertiary-fixed": "#68fcbf",
+                        "on-secondary-container": "#9ac1b2",
+                        "secondary": "#a8cfc0",
+                        "primary": "#4edea3",
+                        "outline-variant": "#3c4a42",
+                        "on-tertiary": "#003825",
+                        "surface-container-lowest": "#08100e",
+                        "surface-container-highest": "#2e3634",
+                        "secondary-container": "#2c5045",
+                        "on-surface": "#dce4e0",
+                        "on-secondary-fixed": "#002018",
+                        "primary-fixed-dim": "#4edea3",
+                        "on-primary-container": "#00422b",
+                        "outline": "#86948a",
+                        "background": "#0d1513",
+                        "secondary-fixed-dim": "#a8cfc0",
+                        "on-secondary-fixed-variant": "#2a4d42",
+                        "inverse-on-surface": "#2a3230",
+                        "surface-variant": "#2e3634",
+                        "on-error-container": "#ffdad6",
+                        "surface-container-low": "#151d1b",
+                        "surface-dim": "#0d1513",
+                        "tertiary-fixed-dim": "#45dfa4",
+                        "tertiary": "#45dfa4",
+                        "on-tertiary-container": "#00422c",
+                        "on-surface-variant": "#bbcabf",
+                        "inverse-surface": "#dce4e0",
+                        "surface-container-high": "#232c29",
+                        "surface-tint": "#4edea3",
+                        "on-tertiary-fixed": "#002114",
+                        "surface": "#0d1513",
+                        "surface-bright": "#333b38",
+                        "error": "#ffb4ab",
+                        "on-background": "#dce4e0",
+                        "secondary-fixed": "#c4ebdc",
+                        "on-primary": "#003824",
+                        "surface-container": "#19211f",
+                        "primary-fixed": "#6ffbbe",
+                        "tertiary-container": "#00b982",
+                        "on-primary-fixed": "#002113",
+                        "on-error": "#690005",
+                        "on-tertiary-fixed-variant": "#005137",
+                        "on-secondary": "#12362c",
+                        "on-primary-fixed-variant": "#005236",
+                        "inverse-primary": "#006c49",
+                        "primary-container": "#10b981"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "fontFamily": {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .ghost-border { border: 0.5px solid rgba(60, 74, 66, 0.2); }
+        body { background-color: #0D1513; color: #dce4e0; font-family: 'Inter', sans-serif; }
+        .jetbrains-mono { font-family: 'JetBrains Mono', monospace; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #232C29; border-radius: 10px; }
+    </style>
+</head>
+<body class="flex flex-col md:flex-row h-screen overflow-hidden">
+<!-- SideNavBar (Shared Component) -->
+<aside class="hidden md:flex flex-col h-full py-6 bg-[#151D1B] dark:bg-[#151D1B] h-screen w-64 border-r border-[#4A6E62]/20">
+<div class="px-6 mb-8 flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary-container" style="font-variation-settings: 'FILL' 1;">security</span>
+</div>
+<div>
+<h1 class="text-[#4EDE93] font-black font-['Manrope'] tracking-tighter leading-none">PolicyMint</h1>
+<p class="text-[10px] text-outline opacity-60 uppercase tracking-widest font-bold">Operator</p>
+</div>
+</div>
+<nav class="flex-1 px-4 space-y-1">
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#232C29] text-[#4EDE93] border-r-4 border-[#4EDE93] font-['Manrope'] text-sm font-semibold transition-all duration-300 translate-x-1" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-[#4A6E62] hover:bg-[#232C29]/50 font-['Manrope'] text-sm font-semibold hover:text-[#4EDE93] transition-all duration-300" href="#">
+<span class="material-symbols-outlined">smart_toy</span>
+<span>Agents</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-[#4A6E62] hover:bg-[#232C29]/50 font-['Manrope'] text-sm font-semibold hover:text-[#4EDE93] transition-all duration-300" href="#">
+<span class="material-symbols-outlined">policy</span>
+<span>Policies</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-[#4A6E62] hover:bg-[#232C29]/50 font-['Manrope'] text-sm font-semibold hover:text-[#4EDE93] transition-all duration-300" href="#">
+<span class="material-symbols-outlined">terminal</span>
+<span>Simulate</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-[#4A6E62] hover:bg-[#232C29]/50 font-['Manrope'] text-sm font-semibold hover:text-[#4EDE93] transition-all duration-300" href="#">
+<span class="material-symbols-outlined">history</span>
+<span>Audit Log</span>
+</a>
+</nav>
+<div class="px-4 py-6 border-t border-[#4A6E62]/10 space-y-1">
+<button class="w-full mb-4 py-3 bg-primary text-on-primary font-bold rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined">add</span>
+                New Policy
+            </button>
+<a class="flex items-center gap-3 px-4 py-2 text-[#4A6E62] hover:text-[#4EDE93] font-['Manrope'] text-xs font-semibold" href="#">
+<span class="material-symbols-outlined text-sm">description</span>
+<span>Docs</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-[#4A6E62] hover:text-[#4EDE93] font-['Manrope'] text-xs font-semibold" href="#">
+<span class="material-symbols-outlined text-sm">help</span>
+<span>Support</span>
+</a>
+</div>
+</aside>
+<main class="flex-1 flex flex-col min-w-0 bg-[#0D1513]">
+<!-- TopNavBar (Shared Component) -->
+<header class="flex justify-between items-center w-full px-6 py-3 h-16 bg-[#0D1513] border-b border-[#4A6E62]/20">
+<div class="flex items-center gap-8">
+<span class="md:hidden text-xl font-bold text-[#4EDE93] tracking-tighter">PolicyMint</span>
+<div class="hidden md:flex gap-6">
+<a class="text-[#4EDE93] border-b-2 border-[#4EDE93] pb-1 font-['Manrope'] text-sm font-medium tracking-tight" href="#">Dashboard</a>
+<a class="text-[#4A6E62] hover:text-[#4EDE93] font-['Manrope'] text-sm font-medium tracking-tight transition-colors duration-200" href="#">Agents</a>
+<a class="text-[#4A6E62] hover:text-[#4EDE93] font-['Manrope'] text-sm font-medium tracking-tight transition-colors duration-200" href="#">Policies</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 mr-2">
+<span class="material-symbols-outlined text-[#4A6E62] hover:text-[#4EDE93] cursor-pointer">notifications</span>
+<span class="material-symbols-outlined text-[#4A6E62] hover:text-[#4EDE93] cursor-pointer">settings</span>
+</div>
+<button class="hidden lg:flex px-4 py-1.5 border border-[#4A6E62]/20 text-on-surface text-sm font-medium rounded hover:bg-[#232C29] transition-colors">Select Agent</button>
+<button class="bg-primary text-on-primary px-4 py-1.5 text-sm font-bold rounded hover:opacity-90 transition-opacity">Connect Wallet</button>
+</div>
+</header>
+<!-- Dashboard Content -->
+<div class="flex-1 overflow-y-auto overflow-x-hidden">
+<div class="flex flex-col lg:flex-row h-full">
+<!-- col-main -->
+<div class="flex-1 p-6 space-y-6">
+<!-- Section 1: MetricTiles -->
+<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-[10px]">
+<!-- Metric 1 -->
+<div class="bg-surface-container-low p-5 rounded-xl ghost-border flex flex-col">
+<span class="text-on-surface-variant text-xs font-medium tracking-wide uppercase opacity-70 mb-2">Cumulative PnL</span>
+<div class="flex items-baseline justify-between">
+<span class="text-2xl font-bold jetbrains-mono text-primary">+$12,480.20</span>
+<span class="text-xs jetbrains-mono font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded">+12.4%</span>
+</div>
+</div>
+<!-- Metric 2 -->
+<div class="bg-surface-container-low p-5 rounded-xl ghost-border flex flex-col">
+<span class="text-on-surface-variant text-xs font-medium tracking-wide uppercase opacity-70 mb-2">Reputation Score</span>
+<div class="flex items-baseline justify-between">
+<span class="text-2xl font-bold jetbrains-mono text-primary">+64.5</span>
+<span class="text-[10px] jetbrains-mono font-medium text-outline">TARGET: +50</span>
+</div>
+</div>
+<!-- Metric 3 -->
+<div class="bg-surface-container-low p-5 rounded-xl ghost-border flex flex-col border-b-2 border-error/20">
+<span class="text-on-surface-variant text-xs font-medium tracking-wide uppercase opacity-70 mb-2">Max Drawdown</span>
+<div class="flex items-baseline justify-between">
+<span class="text-2xl font-bold jetbrains-mono text-error">-2.4%</span>
+<span class="text-[10px] jetbrains-mono font-medium text-outline">BUDGET: 5%</span>
+</div>
+</div>
+<!-- Metric 4 -->
+<div class="bg-surface-container-low p-5 rounded-xl ghost-border flex flex-col">
+<span class="text-on-surface-variant text-xs font-medium tracking-wide uppercase opacity-70 mb-2">Decisions Today</span>
+<div class="flex items-baseline justify-between">
+<span class="text-2xl font-bold jetbrains-mono">1,284</span>
+<span class="text-[10px] jetbrains-mono font-medium text-error-container bg-error-container/20 px-1.5 py-0.5 rounded">12 BLOCKED (0.9%)</span>
+</div>
+</div>
+</div>
+<!-- Section 2: Charts Area -->
+<div class="space-y-6">
+<!-- Chart 1: Drawdown vs. Baseline -->
+<div class="bg-surface-container-low rounded-xl p-6 ghost-border">
+<div class="flex justify-between items-center mb-6">
+<h3 class="font-headline text-lg font-medium">Drawdown vs. baseline</h3>
+<div class="flex gap-4 text-[10px] uppercase font-bold tracking-widest text-outline">
+<div class="flex items-center gap-1.5"><div class="w-2.5 h-0.5 bg-primary"></div> Protected</div>
+<div class="flex items-center gap-1.5"><div class="w-2.5 h-0.5 border-t border-dashed border-outline"></div> Baseline</div>
+</div>
+</div>
+<div class="h-[240px] relative">
+<!-- Area Chart Simulation -->
+<svg class="w-full h-full" preserveaspectratio="none" viewbox="0 0 1000 200">
+<defs>
+<lineargradient id="areaGradient" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#10B981" stop-opacity="0.4"></stop>
+<stop offset="100%" stop-color="#10B981" stop-opacity="0.05"></stop>
+</lineargradient>
+</defs>
+<!-- Baseline Dashed -->
+<path d="M0,80 L100,85 L200,95 L300,120 L400,115 L500,140 L600,135 L700,150 L800,165 L900,160 L1000,180" fill="none" stroke="#86948A" stroke-dasharray="4,4" stroke-width="1"></path>
+<!-- Protected Area -->
+<path d="M0,80 L100,75 L200,60 L300,65 L400,50 L500,55 L600,45 L700,50 L800,40 L900,35 L1000,30 L1000,200 L0,200 Z" fill="url(#areaGradient)"></path>
+<!-- Protected Line -->
+<path d="M0,80 L100,75 L200,60 L300,65 L400,50 L500,55 L600,45 L700,50 L800,40 L900,35 L1000,30" fill="none" stroke="#10B981" stroke-width="2"></path>
+</svg>
+<!-- Grid Lines -->
+<div class="absolute inset-0 flex flex-col justify-between opacity-5 pointer-events-none">
+<div class="w-full h-px bg-on-surface"></div>
+<div class="w-full h-px bg-on-surface"></div>
+<div class="w-full h-px bg-on-surface"></div>
+<div class="w-full h-px bg-on-surface"></div>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<!-- Chart 2: PnL over time -->
+<div class="bg-surface-container-low rounded-xl p-6 ghost-border">
+<h3 class="font-headline text-base font-medium mb-4">PnL over time</h3>
+<div class="h-[180px] relative">
+<svg class="w-full h-full" preserveaspectratio="none" viewbox="0 0 500 150">
+<defs>
+<lineargradient id="pnlGradient" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#22C55E" stop-opacity="0.2"></stop>
+<stop offset="100%" stop-color="#22C55E" stop-opacity="0"></stop>
+</lineargradient>
+</defs>
+<!-- Zero line -->
+<line stroke="#3C4A42" stroke-dasharray="4,2" stroke-width="1" x1="0" x2="500" y1="100" y2="100"></line>
+<!-- PnL Line & Area -->
+<path d="M0,100 L50,90 L100,95 L150,70 L200,75 L250,50 L300,60 L350,40 L400,45 L450,20 L500,30 L500,150 L0,150 Z" fill="url(#pnlGradient)"></path>
+<path d="M0,100 L50,90 L100,95 L150,70 L200,75 L250,50 L300,60 L350,40 L400,45 L450,20 L500,30" fill="none" stroke="#22C55E" stroke-width="2"></path>
+</svg>
+</div>
+</div>
+<!-- Chart 3: Reputation trend -->
+<div class="bg-surface-container-low rounded-xl p-6 ghost-border">
+<h3 class="font-headline text-base font-medium mb-4">Reputation trend</h3>
+<div class="h-[180px] relative">
+<svg class="w-full h-full" preserveaspectratio="none" viewbox="0 0 500 150">
+<!-- Target line -->
+<line stroke="#3C4A42" stroke-dasharray="4,2" stroke-width="1" x1="0" x2="500" y1="75" y2="75"></line>
+<text class="text-[10px] jetbrains-mono" fill="#4A6E62" x="5" y="70">+50 TARGET</text>
+<!-- Step Chart Line -->
+<path d="M0,110 H50 V100 H100 V105 H150 V85 H200 V80 H250 V60 H300 V55 H350 V45 H400 V50 H450 V30 H500" fill="none" stroke="#10B981" stroke-width="2"></path>
+</svg>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- col-feed (Right Rail) -->
+<div class="w-full lg:w-[280px] bg-surface-container-low border-l border-[#4A6E62]/20 flex flex-col h-full overflow-hidden">
+<div class="p-4 border-b border-[#4A6E62]/10 flex items-center justify-between">
+<h4 class="text-[13px] font-medium text-on-surface uppercase tracking-wider">Live Decisions</h4>
+<a class="text-[11px] font-bold text-primary hover:underline" href="#">Filter</a>
+</div>
+<div class="flex-1 overflow-y-auto p-3 space-y-3">
+<!-- DecisionCard: Block -->
+<div class="bg-surface-container p-3 rounded-lg border-l-2 border-error/50">
+<div class="flex justify-between items-start mb-1">
+<span class="text-[10px] jetbrains-mono text-outline">14:22:04</span>
+<span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-error/10 text-error">Block</span>
+</div>
+<p class="text-xs font-semibold mb-1 truncate text-on-surface">Arbitrum: Swap ETH/USDC</p>
+<p class="text-[10px] text-error font-medium italic opacity-90 leading-tight">Exceeds spend cap ($5,000)</p>
+</div>
+<!-- DecisionCard: Allow -->
+<div class="bg-surface-container p-3 rounded-lg border-l-2 border-primary/50">
+<div class="flex justify-between items-start mb-1">
+<span class="text-[10px] jetbrains-mono text-outline">14:21:48</span>
+<span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-primary/10 text-primary">Allow</span>
+</div>
+<p class="text-xs font-semibold mb-1 truncate text-on-surface">Mainnet: Stake 1.5 ETH</p>
+<p class="text-[10px] text-on-surface-variant leading-tight">Lido Finance Policy: Valid</p>
+</div>
+<!-- DecisionCard: Block -->
+<div class="bg-surface-container p-3 rounded-lg border-l-2 border-error/50">
+<div class="flex justify-between items-start mb-1">
+<span class="text-[10px] jetbrains-mono text-outline">14:20:12</span>
+<span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-error/10 text-error">Block</span>
+</div>
+<p class="text-xs font-semibold mb-1 truncate text-on-surface">Polygon: Send 200 MATIC</p>
+<p class="text-[10px] text-error font-medium italic opacity-90 leading-tight">Venue not in allowlist</p>
+</div>
+<!-- DecisionCard: Allow -->
+<div class="bg-surface-container p-3 rounded-lg border-l-2 border-primary/50">
+<div class="flex justify-between items-start mb-1">
+<span class="text-[10px] jetbrains-mono text-outline">14:19:55</span>
+<span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-primary/10 text-primary">Allow</span>
+</div>
+<p class="text-xs font-semibold mb-1 truncate text-on-surface">Base: Claim Rewards</p>
+<p class="text-[10px] text-on-surface-variant leading-tight">Aerodrome Policy: Valid</p>
+</div>
+<!-- DecisionCard: Allow -->
+<div class="bg-surface-container p-3 rounded-lg border-l-2 border-primary/50">
+<div class="flex justify-between items-start mb-1">
+<span class="text-[10px] jetbrains-mono text-outline">14:18:22</span>
+<span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-primary/10 text-primary">Allow</span>
+</div>
+<p class="text-xs font-semibold mb-1 truncate text-on-surface">Optimism: Wrap ETH</p>
+<p class="text-[10px] text-on-surface-variant leading-tight">WETH Gateway Policy: Valid</p>
+</div>
+<!-- DecisionCard: Block -->
+<div class="bg-surface-container p-3 rounded-lg border-l-2 border-error/50">
+<div class="flex justify-between items-start mb-1">
+<span class="text-[10px] jetbrains-mono text-outline">14:15:10</span>
+<span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-error/10 text-error">Block</span>
+</div>
+<p class="text-xs font-semibold mb-1 truncate text-on-surface">Arbitrum: GMX Leverage</p>
+<p class="text-[10px] text-error font-medium italic opacity-90 leading-tight">Exceeds spend cap ($5,000)</p>
+</div>
+<!-- DecisionCard: Allow -->
+<div class="bg-surface-container p-3 rounded-lg border-l-2 border-primary/50">
+<div class="flex justify-between items-start mb-1">
+<span class="text-[10px] jetbrains-mono text-outline">14:12:30</span>
+<span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-primary/10 text-primary">Allow</span>
+</div>
+<p class="text-xs font-semibold mb-1 truncate text-on-surface">Mainnet: Approval USDC</p>
+<p class="text-[10px] text-on-surface-variant leading-tight">Uniswap V3: Valid</p>
+</div>
+<!-- DecisionCard: Allow -->
+<div class="bg-surface-container p-3 rounded-lg border-l-2 border-primary/50">
+<div class="flex justify-between items-start mb-1">
+<span class="text-[10px] jetbrains-mono text-outline">14:08:44</span>
+<span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-primary/10 text-primary">Allow</span>
+</div>
+<p class="text-xs font-semibold mb-1 truncate text-on-surface">Avalanche: Bridge Assets</p>
+<p class="text-[10px] text-on-surface-variant leading-tight">LayerZero: Valid</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- FAB (Suppressed based on context rules - not needed for Dashboard) -->
+</body></html>
