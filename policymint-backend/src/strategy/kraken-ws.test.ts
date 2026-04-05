@@ -36,6 +36,15 @@ class MockWebSocket {
 describe('KrakenWebSocket', () => {
   const originalWebSocket = (globalThis as { WebSocket?: unknown }).WebSocket;
 
+  function getSocketAt(index: number): MockWebSocket {
+    const socket = MockWebSocket.instances[index];
+    if (!socket) {
+      throw new Error(`Expected MockWebSocket at index ${index}`);
+    }
+
+    return socket;
+  }
+
   beforeEach(() => {
     vi.useFakeTimers();
     MockWebSocket.instances.length = 0;
@@ -51,7 +60,7 @@ describe('KrakenWebSocket', () => {
     const feed = new KrakenWebSocket(() => {});
     const connectPromise = feed.connect();
 
-    const socket = MockWebSocket.instances[0];
+    const socket = getSocketAt(0);
     socket.emit('open');
     socket.emit('message', JSON.stringify({ method: 'subscribe', success: true }));
 
@@ -64,7 +73,7 @@ describe('KrakenWebSocket', () => {
     const feed = new KrakenWebSocket(() => {});
     const connectPromise = feed.connect();
 
-    const socket = MockWebSocket.instances[0];
+    const socket = getSocketAt(0);
     socket.emit('open');
     socket.emit('message', JSON.stringify({ method: 'subscribe', success: true }));
     await connectPromise;
@@ -77,7 +86,7 @@ describe('KrakenWebSocket', () => {
     const feed = new KrakenWebSocket(() => {});
     const connectPromise = feed.connect();
 
-    const firstSocket = MockWebSocket.instances[0];
+    const firstSocket = getSocketAt(0);
     firstSocket.emit('open');
     firstSocket.emit('message', JSON.stringify({ method: 'subscribe', success: true }));
     await connectPromise;
