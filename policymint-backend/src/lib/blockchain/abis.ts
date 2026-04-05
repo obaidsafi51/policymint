@@ -1,15 +1,23 @@
 export const AGENT_REGISTRY_ABI = [
   {
-    name: 'registerAgent',
+    name: 'register',
     type: 'function',
     stateMutability: 'nonpayable',
     inputs: [
+      { name: 'agentWallet', type: 'address' },
       { name: 'name', type: 'string' },
-      { name: 'metadataURI', type: 'string' },
-      { name: 'targetChainId', type: 'uint256' },
-      { name: 'strategyType', type: 'string' },
+      { name: 'description', type: 'string' },
+      { name: 'capabilities', type: 'string[]' },
+      { name: 'agentURI', type: 'string' },
     ],
     outputs: [{ name: 'agentId', type: 'uint256' }],
+  },
+  {
+    name: 'isRegistered',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'agentId', type: 'uint256' }],
+    outputs: [{ name: '', type: 'bool' }],
   },
   {
     name: 'getAgent',
@@ -17,11 +25,21 @@ export const AGENT_REGISTRY_ABI = [
     stateMutability: 'view',
     inputs: [{ name: 'agentId', type: 'uint256' }],
     outputs: [
-      { name: 'owner', type: 'address' },
+      { name: 'operatorWallet', type: 'address' },
+      { name: 'agentWallet', type: 'address' },
       { name: 'name', type: 'string' },
-      { name: 'metadataURI', type: 'string' },
+      { name: 'description', type: 'string' },
+      { name: 'capabilities', type: 'string[]' },
+      { name: 'registeredAt', type: 'uint256' },
       { name: 'active', type: 'bool' },
     ],
+  },
+  {
+    name: 'getSigningNonce',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'agentId', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint256' }],
   },
 ] as const;
 
@@ -44,54 +62,103 @@ export const HACKATHON_VAULT_ABI = [
 
 export const VALIDATION_REGISTRY_ABI = [
   {
-    name: 'postValidation',
+    name: 'postEIP712Attestation',
     type: 'function',
     stateMutability: 'nonpayable',
     inputs: [
       { name: 'agentId', type: 'uint256' },
-      { name: 'evaluationId', type: 'bytes32' },
-      { name: 'result', type: 'bool' },
       { name: 'checkpointHash', type: 'bytes32' },
-      { name: 'signature', type: 'bytes' },
+      { name: 'score', type: 'uint8' },
+      { name: 'notes', type: 'string' },
     ],
     outputs: [],
+  },
+  {
+    name: 'getAverageValidationScore',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'agentId', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint256' }],
   },
 ] as const;
 
 export const REPUTATION_REGISTRY_ABI = [
   {
-    name: 'emitSignal',
+    name: 'submitFeedback',
     type: 'function',
     stateMutability: 'nonpayable',
     inputs: [
       { name: 'agentId', type: 'uint256' },
-      { name: 'positive', type: 'bool' },
-      { name: 'reason', type: 'string' },
+      { name: 'score', type: 'uint8' },
+      { name: 'outcomeRef', type: 'bytes32' },
+      { name: 'comment', type: 'string' },
+      { name: 'feedbackType', type: 'uint8' },
     ],
     outputs: [],
   },
   {
-    name: 'getScore',
+    name: 'getAverageScore',
     type: 'function',
     stateMutability: 'view',
     inputs: [{ name: 'agentId', type: 'uint256' }],
-    outputs: [{ name: 'score', type: 'int256' }],
+    outputs: [{ name: 'score', type: 'uint256' }],
   },
 ] as const;
 
 export const RISK_ROUTER_ABI = [
   {
-    name: 'executeSwap',
+    name: 'submitTradeIntent',
     type: 'function',
-    stateMutability: 'payable',
+    stateMutability: 'nonpayable',
     inputs: [
-      { name: 'agentId', type: 'uint256' },
-      { name: 'tokenIn', type: 'address' },
-      { name: 'tokenOut', type: 'address' },
-      { name: 'amountIn', type: 'uint256' },
-      { name: 'minAmountOut', type: 'uint256' },
-      { name: 'authorization', type: 'bytes' },
+      {
+        name: 'intent',
+        type: 'tuple',
+        components: [
+          { name: 'agentId', type: 'uint256' },
+          { name: 'agentWallet', type: 'address' },
+          { name: 'pair', type: 'string' },
+          { name: 'action', type: 'string' },
+          { name: 'amountUsdScaled', type: 'uint256' },
+          { name: 'maxSlippageBps', type: 'uint256' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' },
+        ],
+      },
+      { name: 'signature', type: 'bytes' },
     ],
-    outputs: [{ name: 'amountOut', type: 'uint256' }],
+    outputs: [],
+  },
+  {
+    name: 'simulateIntent',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      {
+        name: 'intent',
+        type: 'tuple',
+        components: [
+          { name: 'agentId', type: 'uint256' },
+          { name: 'agentWallet', type: 'address' },
+          { name: 'pair', type: 'string' },
+          { name: 'action', type: 'string' },
+          { name: 'amountUsdScaled', type: 'uint256' },
+          { name: 'maxSlippageBps', type: 'uint256' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' },
+        ],
+      },
+    ],
+    outputs: [
+      { name: 'valid', type: 'bool' },
+      { name: 'reason', type: 'string' },
+    ],
+  },
+  {
+    name: 'getIntentNonce',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'agentId', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint256' }],
   },
 ] as const;

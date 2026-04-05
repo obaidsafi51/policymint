@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { RegistryType, SignalType } from '@prisma/client';
+import { keccak256, toHex } from 'viem';
 import { prisma } from '../../db/client.js';
 import { verifyApiKey } from '../../lib/crypto.js';
 import { env } from '../../config/env.js';
@@ -11,12 +12,98 @@ import {
 } from '../../lib/blockchain/validationRegistry.js';
 import {
   canEmitReputationSignalOnChain,
+  FeedbackType,
   emitReputationSignal,
 } from '../../lib/blockchain/reputationRegistry.js';
+import { submitTradeIntent } from '../../lib/blockchain/riskRouter.js';
 
 const API_KEY_PREFIX = 'pm_live_';
 const PREFIX_LOOKUP_LENGTH = API_KEY_PREFIX.length + 8;
 const RATE_LIMIT_TIME_WINDOW = env.NODE_ENV === 'test' ? '1 minute' : '1 second';
+type FeedbackTypeValue = (typeof FeedbackType)[keyof typeof FeedbackType];
+type ExecutionState = 'confirmed' | 'unconfirmed' | 'not-applicable';
+type ExecutionErrorTag = 'execution_reverted' | 'execution_timeout' | 'rpc_error' | 'signing_error';
+
+function classifyExecutionError(error: unknown): ExecutionErrorTag {
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+
+  if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) {
+    return 'execution_timeout';
+  }
+
+  if (message.includes('sign') || message.includes('signature')) {
+    return 'signing_error';
+  }
+
+  if (message.includes('rpc') || message.includes('http') || message.includes('network')) {
+    return 'rpc_error';
+  }
+
+  return 'execution_reverted';
+}
+
+function resolveAttestationScore(input: {
+  result: 'allow' | 'block';
+  reason: string | null;
+  executionState: ExecutionState;
+}): number {
+  if (input.result === 'allow') {
+    return input.executionState === 'confirmed' ? 95 : 70;
+  }
+
+  const reason = (input.reason ?? '').toLowerCase();
+  if (reason.includes('malformed') || reason.includes('invalid')) {
+    return 20;
+  }
+
+  return 40;
+}
+
+function resolveFeedback(input: {
+  result: 'allow' | 'block';
+  reason: string | null;
+  executionState: ExecutionState;
+}): { score: number; feedbackType: FeedbackTypeValue; comment: string; signalType: SignalType } {
+  if (input.result === 'allow') {
+    if (input.executionState === 'confirmed') {
+      return {
+        score: 80,
+        feedbackType: FeedbackType.TRADE_EXECUTION,
+        comment: 'Trade executed within policy bounds',
+        signalType: SignalType.POSITIVE,
+      };
+    }
+
+    return {
+      score: 50,
+      feedbackType: FeedbackType.TRADE_EXECUTION,
+      comment: 'Trade allowed but execution failed or remained unconfirmed',
+      signalType: SignalType.POSITIVE,
+    };
+  }
+
+  const reason = input.reason ?? 'blocked by policy';
+  const normalized = reason.toLowerCase();
+  if (normalized.includes('riskrouter') || normalized.includes('hard limit')) {
+    return {
+      score: 10,
+      feedbackType: FeedbackType.RISK_MANAGEMENT,
+      comment: `Trade blocked: RiskRouter hard limit exceeded (${reason})`,
+      signalType: SignalType.NEGATIVE,
+    };
+  }
+
+  return {
+    score: 20,
+    feedbackType: FeedbackType.RISK_MANAGEMENT,
+    comment: `Trade blocked: ${reason}`,
+    signalType: SignalType.NEGATIVE,
+  };
+}
+
+function toOutcomeRef(evaluationId: string): `0x${string}` {
+  return keccak256(toHex(evaluationId));
+}
 
 function getBearerToken(authorizationHeader: string | string[] | undefined): string | null {
   if (!authorizationHeader || Array.isArray(authorizationHeader)) {
@@ -99,7 +186,8 @@ export async function evaluateRoutes(app: FastifyInstance) {
     const start = Date.now();
 
     try {
-      const response = await evaluateIntent(body.data);
+      const evaluation = await evaluateIntent(body.data);
+      const { riskIntentForExecution, ...response } = evaluation;
       const durationMs = Date.now() - start;
 
       app.log.info({
@@ -131,11 +219,37 @@ export async function evaluateRoutes(app: FastifyInstance) {
             return;
           }
 
+          let executionState: ExecutionState = 'not-applicable';
+          let executionNote = '';
+
+          if (response.result === 'allow' && riskIntentForExecution) {
+            try {
+              const execution = await submitTradeIntent({
+                intent: riskIntentForExecution,
+                signature: response.eip712_signed_intent as `0x${string}`,
+              });
+
+              executionState = 'confirmed';
+              executionNote = ' execution_confirmed';
+            } catch (executionError) {
+              executionState = 'unconfirmed';
+              executionNote = ` ${classifyExecutionError(executionError)}`;
+              app.log.error({ err: executionError, evaluation_id: response.evaluation_id }, 'RiskRouter execution failed');
+            }
+          }
+
           const validation = await postValidationRecord({
             agentId: BigInt(agent.erc8004TokenId),
             evaluationId: response.evaluation_id,
-            result: response.result === 'allow',
-            eip712Signature: response.eip712_signed_intent as `0x${string}`,
+            score: resolveAttestationScore({
+              result: response.result,
+              reason: response.reason,
+              executionState,
+            }),
+            notes:
+              response.result === 'allow'
+                ? `Policy evaluation allow; ${executionState === 'confirmed' ? 'execution confirmed on-chain' : 'execution pending/unconfirmed'};${executionNote}`
+                : `Policy block: ${response.reason ?? 'blocked by policy'}`,
             checkpointData: {
               action_type: body.data.action_type,
               venue: body.data.venue,
@@ -167,6 +281,7 @@ export async function evaluateRoutes(app: FastifyInstance) {
                 data: {
                   txHash: validation.txHash,
                   blockNumber: validation.blockNumber,
+                  outcomeRef: toOutcomeRef(response.evaluation_id),
                   strategyCheckpointHash: validation.checkpointHash,
                   emittedAt: new Date(),
                   confirmedAt: new Date(),
@@ -180,6 +295,7 @@ export async function evaluateRoutes(app: FastifyInstance) {
                   registryType: RegistryType.ERC8004,
                   txHash: validation.txHash,
                   blockNumber: validation.blockNumber,
+                  outcomeRef: toOutcomeRef(response.evaluation_id),
                   strategyCheckpointHash: validation.checkpointHash,
                   emittedAt: new Date(),
                   confirmedAt: new Date(),
@@ -205,21 +321,27 @@ export async function evaluateRoutes(app: FastifyInstance) {
             return;
           }
 
+          const feedback = resolveFeedback({
+            result: response.result,
+            reason: response.reason,
+            executionState,
+          });
+
           const reputationTxHash = await emitReputationSignal({
             agentId: BigInt(agent.erc8004TokenId),
-            positive: response.result === 'allow',
-            reason:
-              response.result === 'allow'
-                ? `Policy allow: ${body.data.action_type} on ${body.data.venue}`
-                : `Policy block: ${response.reason ?? 'blocked by policy'}`,
+            score: feedback.score,
+            feedbackType: feedback.feedbackType,
+            outcomeRef: toOutcomeRef(response.evaluation_id),
+            comment: feedback.comment,
           });
 
           await prisma.reputationSignal.create({
             data: {
               agentId: body.data.agent_id,
-              signalType: response.result === 'allow' ? SignalType.POSITIVE : SignalType.NEGATIVE,
+              signalType: feedback.signalType,
               cycleId: response.evaluation_id,
               txHash: reputationTxHash,
+              scoreSnapshot: feedback.score,
               emittedAt: new Date(),
             },
           });
@@ -230,8 +352,8 @@ export async function evaluateRoutes(app: FastifyInstance) {
 
       return reply.status(200).send(response);
     } catch (error) {
-      if (error instanceof EvaluationServiceError && error.statusCode === 404) {
-        return reply.status(404).send({ error: error.message, evaluation_id: null });
+      if (error instanceof EvaluationServiceError) {
+        return reply.status(error.statusCode).send({ error: error.message, evaluation_id: null });
       }
 
       request.log.error({ err: error }, 'Policy evaluation failed unexpectedly');

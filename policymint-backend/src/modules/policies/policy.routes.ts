@@ -11,7 +11,10 @@ export async function policyRoutes(app: FastifyInstance) {
   app.post('/', async (request, reply) => {
     const body = CreatePolicySchema.safeParse(request.body);
     if (!body.success) {
-      return reply.status(422).send({ error: body.error.flatten() });
+      return reply.status(422).send({
+        error: body.error.flatten(),
+        message: 'Policy validation failed. Check spend and daily loss ceilings.',
+      });
     }
 
     const policy = await createPolicy(body.data);

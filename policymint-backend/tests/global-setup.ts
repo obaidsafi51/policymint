@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 import dotenv from 'dotenv';
+import { applyTestEnvDefaults } from './test-env';
 
 async function disconnectPrisma(): Promise<void> {
   const { prisma } = await import('../src/db/client');
@@ -13,6 +14,8 @@ export default async function setup() {
   if (existsSync(envTestPath)) {
     dotenv.config({ path: envTestPath, override: true });
   }
+
+  applyTestEnvDefaults();
 
   if (process.env.RUN_DB_TESTS === 'true') {
     execSync('npx prisma migrate reset --force --skip-seed', {

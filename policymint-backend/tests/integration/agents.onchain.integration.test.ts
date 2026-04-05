@@ -87,8 +87,9 @@ describeDb('POST /v1/agents on-chain onboarding', () => {
     expect(registerAgentOnChainMock).toHaveBeenCalledTimes(1);
     expect(registerAgentOnChainMock).toHaveBeenCalledWith({
       name: 'Onchain Agent',
-      metadataURI: expect.stringContaining('/agents/'),
-      strategyType: 'momentum',
+      description: 'MOMENTUM strategy agent managed by PolicyMint',
+      capabilities: ['policy-evaluation', 'risk-routing', 'eip712-signing'],
+      agentURI: expect.stringContaining('data:application/json;base64,'),
     });
     expect(claimHackathonAllocationMock).toHaveBeenCalledWith(BigInt(42));
   });

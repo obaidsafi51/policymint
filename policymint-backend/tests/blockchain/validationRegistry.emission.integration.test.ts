@@ -5,6 +5,7 @@ import { generateApiKey } from '../../src/lib/crypto';
 import { generateId } from '../../src/lib/uuid';
 import * as validationRegistry from '../../src/lib/blockchain/validationRegistry';
 import * as reputationRegistry from '../../src/lib/blockchain/reputationRegistry';
+import * as riskRouter from '../../src/lib/blockchain/riskRouter';
 import { describeDb } from '../helpers/db';
 
 describeDb('ValidationRegistry emission integration', () => {
@@ -79,6 +80,9 @@ describeDb('ValidationRegistry emission integration', () => {
       });
 
     vi.spyOn(validationRegistry, 'canPostValidationOnChain').mockReturnValue(true);
+    vi.spyOn(riskRouter, 'submitTradeIntent').mockResolvedValue({
+      txHash: `0x${'f'.repeat(64)}` as `0x${string}`,
+    });
     vi.spyOn(reputationRegistry, 'canEmitReputationSignalOnChain').mockReturnValue(false);
 
     const response = await app.inject({
@@ -103,7 +107,7 @@ describeDb('ValidationRegistry emission integration', () => {
       expect.objectContaining({
         agentId: BigInt(42),
         evaluationId: body.evaluation_id,
-        result: true,
+        score: 95,
       }),
     );
 
@@ -164,7 +168,7 @@ describeDb('ValidationRegistry emission integration', () => {
       expect.objectContaining({
         agentId: BigInt(42),
         evaluationId: body.evaluation_id,
-        result: false,
+        score: 40,
       }),
     );
 
@@ -176,5 +180,47 @@ describeDb('ValidationRegistry emission integration', () => {
       expect(persisted?.txHash).toBe(`0x${'c'.repeat(64)}`);
       expect(persisted?.strategyCheckpointHash).toBe(`0x${'d'.repeat(64)}`);
     });
+  });
+
+  it('uses score 70 for allow decisions when execution is unconfirmed or reverted', async () => {
+    const { id, apiKey } = await createAgentWithApiKey('Allow Unconfirmed Agent');
+
+    const postValidationSpy = vi
+      .spyOn(validationRegistry, 'postValidationRecord')
+      .mockResolvedValue({
+        txHash: `0x${'1'.repeat(64)}` as `0x${string}`,
+        blockNumber: BigInt(130),
+        checkpointHash: `0x${'2'.repeat(64)}` as `0x${string}`,
+      });
+
+    vi.spyOn(validationRegistry, 'canPostValidationOnChain').mockReturnValue(true);
+    vi.spyOn(riskRouter, 'submitTradeIntent').mockRejectedValue(new Error('execution reverted'));
+    vi.spyOn(reputationRegistry, 'canEmitReputationSignalOnChain').mockReturnValue(false);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/evaluate',
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+      },
+      payload: evaluatePayload(id),
+    });
+
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.result).toBe('allow');
+
+    await vi.waitFor(() => {
+      expect(postValidationSpy).toHaveBeenCalledTimes(1);
+    });
+
+    expect(postValidationSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: BigInt(42),
+        evaluationId: body.evaluation_id,
+        score: 70,
+      }),
+    );
   });
 });

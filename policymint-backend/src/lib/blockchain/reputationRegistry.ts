@@ -1,15 +1,26 @@
 import { env } from '../../config/env.js';
 import { logger } from '../logger.js';
 import { REPUTATION_REGISTRY_ABI } from './abis.js';
-import { publicClient, signerAccount, walletClient } from './client.js';
+import { operatorAccount, operatorWalletClient, publicClient } from './client.js';
 import { txQueue } from './txQueue.js';
 
 const REPUTATION_REGISTRY = env.REPUTATION_REGISTRY_ADDRESS as `0x${string}` | undefined;
 
+export const FeedbackType = {
+  TRADE_EXECUTION: 0,
+  RISK_MANAGEMENT: 1,
+  STRATEGY_QUALITY: 2,
+  GENERAL: 3,
+} as const;
+
+type FeedbackTypeValue = (typeof FeedbackType)[keyof typeof FeedbackType];
+
 export interface EmitSignalParams {
   agentId: bigint;
-  positive: boolean;
-  reason: string;
+  score: number;
+  outcomeRef: `0x${string}`;
+  comment: string;
+  feedbackType: FeedbackTypeValue;
 }
 
 export function canEmitReputationSignalOnChain() {
@@ -21,27 +32,44 @@ export async function emitReputationSignal(params: EmitSignalParams): Promise<`0
     throw new Error('REPUTATION_REGISTRY_ADDRESS missing; reputation emission is disabled');
   }
 
+  if (params.score < 1 || params.score > 100) {
+    throw new Error(`ReputationRegistry.submitFeedback() score must be between 1 and 100. Received ${params.score}`);
+  }
+
+  if (!Object.values(FeedbackType).includes(params.feedbackType)) {
+    throw new Error(
+      `ReputationRegistry.submitFeedback() feedbackType must be one of 0,1,2,3. Received ${params.feedbackType}`,
+    );
+  }
+
   logger.info(
     {
       contract: 'ReputationRegistry',
       agentId: params.agentId.toString(),
-      positive: params.positive,
+      score: params.score,
+      feedbackType: params.feedbackType,
     },
-    'Submitting emitSignal',
+    'Submitting submitFeedback',
   );
 
   const txHash = await txQueue.add(() =>
-    walletClient.writeContract({
+    operatorWalletClient.writeContract({
       address: REPUTATION_REGISTRY,
       abi: REPUTATION_REGISTRY_ABI,
-      functionName: 'emitSignal',
-      args: [params.agentId, params.positive, params.reason.slice(0, 256)],
-      account: signerAccount,
+      functionName: 'submitFeedback',
+      args: [
+        params.agentId,
+        params.score,
+        params.outcomeRef,
+        params.comment.slice(0, 256),
+        params.feedbackType,
+      ],
+      account: operatorAccount,
       gas: BigInt(150_000),
     }),
   );
 
-  logger.info({ contract: 'ReputationRegistry', txHash }, 'emitSignal submitted');
+  logger.info({ contract: 'ReputationRegistry', txHash }, 'submitFeedback submitted');
 
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
@@ -50,10 +78,10 @@ export async function emitReputationSignal(params: EmitSignalParams): Promise<`0
   });
 
   if (receipt.status !== 'success') {
-    throw new Error(`ReputationRegistry.emitSignal() reverted. tx: ${txHash}`);
+    throw new Error(`ReputationRegistry.submitFeedback() reverted. tx: ${txHash}`);
   }
 
-  logger.info({ contract: 'ReputationRegistry', txHash }, 'emitSignal confirmed');
+  logger.info({ contract: 'ReputationRegistry', txHash }, 'submitFeedback confirmed');
 
   return txHash;
 }
@@ -66,7 +94,7 @@ export async function getReputationScore(agentId: bigint): Promise<number> {
   const score = await publicClient.readContract({
     address: REPUTATION_REGISTRY,
     abi: REPUTATION_REGISTRY_ABI,
-    functionName: 'getScore',
+    functionName: 'getAverageScore',
     args: [agentId],
   });
 

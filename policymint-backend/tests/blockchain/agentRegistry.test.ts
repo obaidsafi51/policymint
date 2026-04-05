@@ -18,8 +18,9 @@ vi.mock('../../src/lib/logger', () => ({
 }));
 
 vi.mock('../../src/lib/blockchain/client', () => ({
-  signerAccount: { address: '0x0000000000000000000000000000000000000001' },
-  walletClient: {
+  operatorAccount: { address: '0x0000000000000000000000000000000000000001' },
+  agentAccount: { address: '0x0000000000000000000000000000000000000002' },
+  operatorWalletClient: {
     writeContract: writeContractMock,
   },
   publicClient: {
@@ -33,7 +34,7 @@ describe('registerAgentOnChain', () => {
     writeContractMock.mockResolvedValue('0xabc123');
   });
 
-  it('submits registerAgent with expected chainId and strategy payload', async () => {
+  it('submits register with expected payload', async () => {
     waitForReceiptMock.mockResolvedValue({
       status: 'success',
       logs: [
@@ -52,14 +53,21 @@ describe('registerAgentOnChain', () => {
 
     await registerAgentOnChain({
       name: 'Alpha Agent',
-      metadataURI: 'https://policymint.xyz/agents/abc',
-      strategyType: 'momentum',
+      description: 'Momentum strategy agent',
+      capabilities: ['policy-evaluation', 'risk-routing'],
+      agentURI: 'data:application/json;base64,eyJ0ZXN0Ijp0cnVlfQ==',
     });
 
     expect(writeContractMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        functionName: 'registerAgent',
-        args: ['Alpha Agent', 'https://policymint.xyz/agents/abc', BigInt(11155111), 'momentum'],
+        functionName: 'register',
+        args: [
+          '0x0000000000000000000000000000000000000002',
+          'Alpha Agent',
+          'Momentum strategy agent',
+          ['policy-evaluation', 'risk-routing'],
+          'data:application/json;base64,eyJ0ZXN0Ijp0cnVlfQ==',
+        ],
       }),
     );
   });
@@ -83,8 +91,9 @@ describe('registerAgentOnChain', () => {
 
     const result = await registerAgentOnChain({
       name: 'Alpha Agent',
-      metadataURI: 'https://policymint.xyz/agents/abc',
-      strategyType: 'momentum',
+      description: 'Momentum strategy agent',
+      capabilities: ['policy-evaluation', 'risk-routing'],
+      agentURI: 'data:application/json;base64,eyJ0ZXN0Ijp0cnVlfQ==',
     });
 
     expect(result.txHash).toBe('0xabc123');
@@ -108,8 +117,9 @@ describe('registerAgentOnChain', () => {
     await expect(
       registerAgentOnChain({
         name: 'Alpha Agent',
-        metadataURI: 'https://policymint.xyz/agents/abc',
-        strategyType: 'momentum',
+        description: 'Momentum strategy agent',
+        capabilities: ['policy-evaluation', 'risk-routing'],
+        agentURI: 'data:application/json;base64,eyJ0ZXN0Ijp0cnVlfQ==',
       }),
     ).rejects.toThrow('agentId parsed as 0');
   });
@@ -125,9 +135,10 @@ describe('registerAgentOnChain', () => {
     await expect(
       registerAgentOnChain({
         name: 'Alpha Agent',
-        metadataURI: 'https://policymint.xyz/agents/abc',
-        strategyType: 'momentum',
+        description: 'Momentum strategy agent',
+        capabilities: ['policy-evaluation', 'risk-routing'],
+        agentURI: 'data:application/json;base64,eyJ0ZXN0Ijp0cnVlfQ==',
       }),
-    ).rejects.toThrow('AgentRegistry.registerAgent() reverted');
+    ).rejects.toThrow('AgentRegistry.register() reverted');
   });
 });
