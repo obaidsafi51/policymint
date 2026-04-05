@@ -1,8 +1,8 @@
 import type { Hex } from 'viem';
 import { keccak256, toBytes } from 'viem';
 import { signTypedData } from 'viem/accounts';
-import { env } from '../../config/env';
-import type { EvaluateIntentInput } from './evaluate.schema';
+import { env } from '../../config/env.js';
+import type { EvaluateIntentInput } from './evaluate.schema.js';
 
 const ALLOWED_CHAIN_IDS = [11155111];
 

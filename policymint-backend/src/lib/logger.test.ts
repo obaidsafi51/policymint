@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Writable } from 'node:stream';
-import { logger, createLogger } from './logger';
+import { logger, createLogger } from './logger.js';
 
 describe('logger', () => {
   it('instantiates and exposes core log methods', () => {

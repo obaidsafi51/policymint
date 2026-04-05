@@ -1,0 +1,98 @@
+import { env } from '../../config/env.js';
+import { logger } from '../logger.js';
+import { AGENT_REGISTRY_ABI } from './abis.js';
+import { publicClient, signerAccount, walletClient } from './client.js';
+import { txQueue } from './txQueue.js';
+
+export interface RegisterAgentParams {
+  name: string;
+  metadataURI: string;
+  strategyType: string;
+}
+
+export interface RegisterAgentResult {
+  agentId: bigint;
+  txHash: `0x${string}`;
+}
+
+const AGENT_REGISTRY = env.IDENTITY_REGISTRY_ADDRESS as `0x${string}` | undefined;
+
+export function canRegisterAgentOnChain() {
+  return Boolean(AGENT_REGISTRY);
+}
+
+export async function registerAgentOnChain(
+  params: RegisterAgentParams,
+): Promise<RegisterAgentResult> {
+  if (!AGENT_REGISTRY) {
+    throw new Error('IDENTITY_REGISTRY_ADDRESS missing; on-chain agent registration is disabled');
+  }
+
+  logger.info(
+    {
+      contract: 'AgentRegistry',
+      name: params.name,
+      strategyType: params.strategyType,
+    },
+    'Submitting registerAgent transaction',
+  );
+
+  const txHash = await txQueue.add(() =>
+    walletClient.writeContract({
+      address: AGENT_REGISTRY,
+      abi: AGENT_REGISTRY_ABI,
+      functionName: 'registerAgent',
+      args: [params.name, params.metadataURI, BigInt(11155111), params.strategyType],
+      account: signerAccount,
+    }),
+  );
+
+  logger.info({ contract: 'AgentRegistry', txHash }, 'registerAgent transaction submitted');
+
+  const receipt = await publicClient.waitForTransactionReceipt({
+    hash: txHash,
+    confirmations: 1,
+    timeout: 60_000,
+  });
+
+  if (receipt.status !== 'success') {
+    throw new Error(`AgentRegistry.registerAgent() reverted. tx: ${txHash}`);
+  }
+
+  logger.info({ contract: 'AgentRegistry', txHash }, 'registerAgent transaction confirmed');
+
+  let parsedAgentId = BigInt(0);
+
+  for (const log of receipt.logs) {
+    if (log.topics[1]) {
+      try {
+        parsedAgentId = BigInt(log.topics[1]);
+        break;
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  if (parsedAgentId === BigInt(0)) {
+    logger.error(
+      {
+        contract: 'AgentRegistry',
+        txHash,
+        logs: receipt.logs.map(log => ({
+          address: log.address,
+          topics: log.topics,
+          data: log.data,
+        })),
+      },
+      'agentId parse failed — dumping receipt logs for ABI diagnosis',
+    );
+
+    throw new Error(
+      `agentId parsed as 0 — ABI event mismatch. Check AgentRegistry event logs: ` +
+        `https://sepolia.etherscan.io/tx/${txHash}#eventlog`,
+    );
+  }
+
+  return { agentId: parsedAgentId, txHash };
+}

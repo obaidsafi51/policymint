@@ -1,7 +1,7 @@
-import { prisma } from '../../db/client';
-import { generateId } from '../../lib/uuid';
-import { generateApiKey } from '../../lib/crypto';
-import type { RegisterAgentInput } from './agent.schema';
+import { prisma } from '../../db/client.js';
+import { generateId } from '../../lib/uuid.js';
+import { generateApiKey } from '../../lib/crypto.js';
+import type { RegisterAgentInput } from './agent.schema.js';
 
 export async function registerAgent(input: RegisterAgentInput) {
   const id = generateId();
@@ -25,9 +25,11 @@ export async function registerAgent(input: RegisterAgentInput) {
       strategyType: true,
       chainId: true,
       erc8004TokenId: true,
+      registrationTxHash: true,
+      vaultClaimedAt: true,
       createdAt: true
-    }
-  });
+    } as never
+  } as never);
 
   return { agent, apiKey: raw };
 }
@@ -42,9 +44,11 @@ export async function getAgentById(id: string) {
       strategyType: true,
       chainId: true,
       erc8004TokenId: true,
+      registrationTxHash: true,
+      vaultClaimedAt: true,
       isActive: true,
       createdAt: true,
       _count: { select: { policies: true, evaluations: true } }
-    }
-  });
+    } as never
+  } as never);
 }

@@ -7,6 +7,13 @@ import { describeDb } from '../helpers/db';
 
 describeDb('POST /v1/evaluate', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
+  let walletCounter = 1;
+
+  function nextWalletAddress() {
+    const hex = walletCounter.toString(16).padStart(40, '0');
+    walletCounter += 1;
+    return `0x${hex}`;
+  }
 
   async function createAgent(name = 'Eval Agent') {
     const id = generateId();
@@ -16,7 +23,7 @@ describeDb('POST /v1/evaluate', () => {
       data: {
         id,
         name,
-        walletAddress: '0xabcdef0123456789abcdef0123456789abcdef01',
+        walletAddress: nextWalletAddress(),
         strategyType: 'MOMENTUM',
         chainId: 11155111,
         apiKeyHash: apiKey.hash,
@@ -93,6 +100,7 @@ describeDb('POST /v1/evaluate', () => {
     await prisma.reputationSignal.deleteMany();
     await prisma.strategyCycle.deleteMany();
     await prisma.agent.deleteMany();
+    walletCounter = 1;
   });
 
   afterEach(() => {

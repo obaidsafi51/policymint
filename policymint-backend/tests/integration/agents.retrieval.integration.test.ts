@@ -7,6 +7,13 @@ import { describeDb } from '../helpers/db';
 
 describeDb('GET /v1/agents/:id', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
+  let walletCounter = 1;
+
+  function nextWalletAddress() {
+    const hex = walletCounter.toString(16).padStart(40, '0');
+    walletCounter += 1;
+    return `0x${hex}`;
+  }
 
   async function createAuthenticatedAgent() {
     const authId = generateId();
@@ -16,7 +23,7 @@ describeDb('GET /v1/agents/:id', () => {
       data: {
         id: authId,
         name: 'Auth Agent',
-        walletAddress: '0xabcdef0123456789abcdef0123456789abcdef01',
+        walletAddress: nextWalletAddress(),
         strategyType: 'MOMENTUM',
         chainId: 11155111,
         apiKeyHash: authKey.hash,
@@ -39,6 +46,7 @@ describeDb('GET /v1/agents/:id', () => {
     await prisma.reputationSignal.deleteMany();
     await prisma.strategyCycle.deleteMany();
     await prisma.agent.deleteMany();
+    walletCounter = 1;
   });
 
   afterAll(async () => {
@@ -58,12 +66,13 @@ describeDb('GET /v1/agents/:id', () => {
     const authHeaders = await createAuthenticatedAgent();
     const id = generateId();
     const apiKey = await generateApiKey();
+    const seededWallet = nextWalletAddress();
 
     await prisma.agent.create({
       data: {
         id,
         name: 'Seeded Agent',
-        walletAddress: '0xabcdef0123456789abcdef0123456789abcdef01',
+        walletAddress: seededWallet,
         strategyType: 'MOMENTUM',
         chainId: 11155111,
         apiKeyHash: apiKey.hash,
@@ -81,7 +90,7 @@ describeDb('GET /v1/agents/:id', () => {
     expect(response.statusCode).toBe(200);
     expect(body.id).toBe(id);
     expect(body.name).toBe('Seeded Agent');
-    expect(body.walletAddress).toBe('0xabcdef0123456789abcdef0123456789abcdef01');
+    expect(body.walletAddress).toBe(seededWallet);
     expect(body.strategyType).toBe('MOMENTUM');
     expect(body.chainId).toBe(11155111);
     expect(body.isActive).toBe(true);
@@ -118,7 +127,7 @@ describeDb('GET /v1/agents/:id', () => {
       data: {
         id,
         name: 'Sensitive Test Agent',
-        walletAddress: '0xabcdef0123456789abcdef0123456789abcdef01',
+        walletAddress: nextWalletAddress(),
         strategyType: 'MOMENTUM',
         chainId: 11155111,
         apiKeyHash: apiKey.hash,

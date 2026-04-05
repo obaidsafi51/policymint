@@ -1,5 +1,5 @@
 import type { JsonValue } from '@prisma/client/runtime/library';
-import type { EvaluateIntentInput } from '../evaluate.schema';
+import type { EvaluateIntentInput } from '../evaluate.schema.js';
 
 export interface EvaluatorResult {
   passed: boolean;

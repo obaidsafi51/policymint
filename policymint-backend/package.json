@@ -47,6 +47,7 @@
     "@tsconfig/node22": "^22.0.0",
     "@types/bcrypt": "^5.0.2",
     "@types/node": "^22.15.0",
+    "@types/p-queue": "^3.1.0",
     "@types/supertest": "^6.0.3",
     "dotenv-cli": "^8.0.0",
     "prettier": "^3.8.1",

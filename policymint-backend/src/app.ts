@@ -3,14 +3,14 @@ import sensible from '@fastify/sensible';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
-import { logger } from './lib/logger';
-import { env } from './config/env';
-import { healthRoutes } from './modules/health/health.routes';
-import { agentRoutes, agentProtectedRoutes } from './modules/agents/agent.routes';
-import { policyRoutes } from './modules/policies/policy.routes';
-import { evaluateRoutes } from './modules/policy-engine/evaluate.route';
-import { evaluationTxHashRoutes } from './modules/policy-engine/evaluation-tx-hash.route';
-import { apiKeyAuth } from './plugins/auth';
+import { logger } from './lib/logger.js';
+import { env } from './config/env.js';
+import { healthRoutes } from './modules/health/health.routes.js';
+import { agentRoutes, agentProtectedRoutes } from './modules/agents/agent.routes.js';
+import { policyRoutes } from './modules/policies/policy.routes.js';
+import { evaluateRoutes } from './modules/policy-engine/evaluate.route.js';
+import { evaluationTxHashRoutes } from './modules/policy-engine/evaluation-tx-hash.route.js';
+import { apiKeyAuth } from './plugins/auth.js';
 
 export async function buildApp() {
   const app = Fastify({

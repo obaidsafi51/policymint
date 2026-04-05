@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateApiKey, verifyApiKey } from './crypto';
+import { generateApiKey, verifyApiKey } from './crypto.js';
 
 describe('crypto utility', () => {
   it('returns expected API key shape', async () => {

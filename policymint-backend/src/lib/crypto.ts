@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import { randomBytes } from 'node:crypto';
-import { env } from '../config/env';
+import { env } from '../config/env.js';
 
 const PREFIX = 'pm_live_';
 

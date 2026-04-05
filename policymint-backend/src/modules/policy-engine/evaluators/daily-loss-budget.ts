@@ -1,7 +1,7 @@
 import type { JsonValue } from '@prisma/client/runtime/library';
-import type { EvaluateIntentInput } from '../evaluate.schema';
-import type { EvaluatorResult } from './venue-allowlist';
-import { parseBigIntSafe } from './utils/parse-bigint-safe';
+import type { EvaluateIntentInput } from '../evaluate.schema.js';
+import type { EvaluatorResult } from './venue-allowlist.js';
+import { parseBigIntSafe } from './utils/parse-bigint-safe.js';
 
 interface DailyLossBudgetParams {
   max_daily_loss_wei?: string;

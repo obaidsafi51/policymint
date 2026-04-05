@@ -1,9 +1,18 @@
 import type { FastifyInstance } from 'fastify';
-import { prisma } from '../../db/client';
-import { verifyApiKey } from '../../lib/crypto';
-import { env } from '../../config/env';
-import { EvaluateIntentSchema } from './evaluate.schema';
-import { evaluateIntent, EvaluationServiceError } from './evaluate.service';
+import { RegistryType, SignalType } from '@prisma/client';
+import { prisma } from '../../db/client.js';
+import { verifyApiKey } from '../../lib/crypto.js';
+import { env } from '../../config/env.js';
+import { EvaluateIntentSchema } from './evaluate.schema.js';
+import { evaluateIntent, EvaluationServiceError } from './evaluate.service.js';
+import {
+  canPostValidationOnChain,
+  postValidationRecord,
+} from '../../lib/blockchain/validationRegistry.js';
+import {
+  canEmitReputationSignalOnChain,
+  emitReputationSignal,
+} from '../../lib/blockchain/reputationRegistry.js';
 
 const API_KEY_PREFIX = 'pm_live_';
 const PREFIX_LOOKUP_LENGTH = API_KEY_PREFIX.length + 8;
@@ -102,6 +111,122 @@ export async function evaluateRoutes(app: FastifyInstance) {
         venue: body.data.venue,
         action_type: body.data.action_type
       }, 'Policy evaluation completed');
+
+      setImmediate(async () => {
+        try {
+          const agent = await prisma.agent.findUnique({
+            where: { id: body.data.agent_id },
+            select: {
+              id: true,
+              erc8004TokenId: true,
+            },
+          });
+
+          if (!agent?.erc8004TokenId) {
+            return;
+          }
+
+          if (!canPostValidationOnChain()) {
+            app.log.warn({ evaluation_id: response.evaluation_id }, 'ValidationRegistry not configured');
+            return;
+          }
+
+          const validation = await postValidationRecord({
+            agentId: BigInt(agent.erc8004TokenId),
+            evaluationId: response.evaluation_id,
+            result: response.result === 'allow',
+            eip712Signature: response.eip712_signed_intent as `0x${string}`,
+            checkpointData: {
+              action_type: body.data.action_type,
+              venue: body.data.venue,
+              amount: body.data.amount,
+              timestamp: Math.floor(Date.now() / 1_000),
+            },
+          });
+
+          await prisma.$transaction(async tx => {
+            await tx.intentEvaluation.update({
+              where: { id: response.evaluation_id },
+              data: {
+                validationTxHash: validation.txHash,
+                emittedAt: new Date(),
+              },
+            });
+
+            const existingValidationRecord = await tx.validationRecord.findFirst({
+              where: {
+                evaluationId: response.evaluation_id,
+                registryType: RegistryType.ERC8004,
+              },
+              select: { id: true },
+            });
+
+            if (existingValidationRecord) {
+              await tx.validationRecord.update({
+                where: { id: existingValidationRecord.id },
+                data: {
+                  txHash: validation.txHash,
+                  blockNumber: validation.blockNumber,
+                  strategyCheckpointHash: validation.checkpointHash,
+                  emittedAt: new Date(),
+                  confirmedAt: new Date(),
+                  agentTokenId: agent.erc8004TokenId,
+                },
+              } as never);
+            } else {
+              await tx.validationRecord.create({
+                data: {
+                  evaluationId: response.evaluation_id,
+                  registryType: RegistryType.ERC8004,
+                  txHash: validation.txHash,
+                  blockNumber: validation.blockNumber,
+                  strategyCheckpointHash: validation.checkpointHash,
+                  emittedAt: new Date(),
+                  confirmedAt: new Date(),
+                  agentTokenId: agent.erc8004TokenId,
+                },
+              } as never);
+            }
+          });
+
+          if (!canEmitReputationSignalOnChain()) {
+            app.log.warn({ evaluation_id: response.evaluation_id }, 'ReputationRegistry not configured');
+            return;
+          }
+
+          const alreadyEmittedSignal = await prisma.reputationSignal.findFirst({
+            where: {
+              cycleId: response.evaluation_id,
+            },
+            select: { id: true },
+          });
+
+          if (alreadyEmittedSignal) {
+            return;
+          }
+
+          const reputationTxHash = await emitReputationSignal({
+            agentId: BigInt(agent.erc8004TokenId),
+            positive: response.result === 'allow',
+            reason:
+              response.result === 'allow'
+                ? `Policy allow: ${body.data.action_type} on ${body.data.venue}`
+                : `Policy block: ${response.reason ?? 'blocked by policy'}`,
+          });
+
+          await prisma.reputationSignal.create({
+            data: {
+              agentId: body.data.agent_id,
+              signalType: response.result === 'allow' ? SignalType.POSITIVE : SignalType.NEGATIVE,
+              cycleId: response.evaluation_id,
+              txHash: reputationTxHash,
+              emittedAt: new Date(),
+            },
+          });
+        } catch (err) {
+          app.log.error({ err, evaluation_id: response.evaluation_id }, 'Background on-chain emission failed');
+        }
+      });
 
       return reply.status(200).send(response);
     } catch (error) {
