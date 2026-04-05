@@ -9,6 +9,10 @@ export interface Decision {
   txHash?: string;
   policyIdTriggered?: string;
   reason?: string;
+  /** One-line trade summary for feed cards (e.g. Swap 10,000 USDC → 2.5 ETH) */
+  summary?: string;
+  /** Footer context: venue name or allow path */
+  venue?: string;
 }
 
 export interface MetricData {

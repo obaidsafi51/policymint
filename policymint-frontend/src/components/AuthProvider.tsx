@@ -22,7 +22,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <ConnectKitProvider theme="auto" mode="dark">{children}</ConnectKitProvider>
+        <ConnectKitProvider theme="midnight" mode="dark">
+          {children}
+        </ConnectKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
   );

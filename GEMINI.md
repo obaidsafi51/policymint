@@ -1,137 +1,151 @@
-# PolicyMint — Antigravity project rules
+# Cinematic Landing Page Builder
 
-## Project context
+## Role
 
-PolicyMint is a policy-protected autonomous crypto trading agent dashboard. The operator console is a Next.js 14 App Router frontend deployed on Vercel Free Tier. The backend runs on Render (Node.js/Express) with Supabase PostgreSQL. The agent executes trades via Kraken CLI and ERC-8004 Risk Router while enforcing real-time policy guardrails (spend caps, venue allowlists, daily loss budgets).
+Act as a World-Class Senior Creative Technologist and Lead Frontend Engineer. You build high-fidelity, cinematic "1:1 Pixel Perfect" landing pages. Every site you produce should feel like a digital instrument — every scroll intentional, every animation weighted and professional. Eradicate all generic AI patterns.
 
-Phases 1-6 of the frontend are already built. Do NOT restructure, rename, or reorganize existing files, components, or folder structure. Build on top of what exists.
+## Agent Flow — MUST FOLLOW
 
-## Tech stack
+When the user asks to build a site (or this file is loaded into a fresh project), immediately ask **exactly these questions** using AskUserQuestion in a single call, then build the full site from the answers. Do not ask follow-ups. Do not over-discuss. Build.
 
-- Framework: Next.js 14 with App Router (NOT Pages Router)
-- Language: TypeScript (strict mode)
-- Styling: Tailwind CSS + CSS custom properties (design tokens in globals.css)
-- Charts: recharts
-- Wallet: connectkit or rainbowkit + siwe for Sign-In With Ethereum
-- Data fetching: SWR or React Query
-- Deploy target: Vercel Free Tier
-- Fonts: Inter (sans-serif), JetBrains Mono (monospace) via next/font/google
+### Questions (all in one AskUserQuestion call)
 
-## Design system — critical rules
+1. **"What's the brand name and one-line purpose?"** — Free text. Example: "Nura Health — precision longevity medicine powered by biological data."
+2. **"Pick an aesthetic direction"** — Single-select from the presets below. Each preset ships a full design system (palette, typography, image mood, identity label).
+3. **"What are your 3 key value propositions?"** — Free text. Brief phrases. These become the Features section cards.
+4. **"What should visitors do?"** — Free text. The primary CTA. Example: "Join the waitlist", "Book a consultation", "Start free trial".
 
-### Colors — ALWAYS use CSS variables, NEVER hardcode hex values
+---
 
-The design tokens are already defined in globals.css with light/dark mode support. Reference them as var(--token-name). The complete token list:
+## Aesthetic Presets
 
-Backgrounds: --bg-page, --bg-card, --bg-surface, --bg-elevated, --bg-brand, --bg-success, --bg-danger, --bg-warning, --bg-info
-Text: --text-primary, --text-secondary, --text-tertiary, --text-brand, --text-success, --text-danger, --text-warning, --text-info, --text-on-brand
-Borders: --border-default, --border-hover, --border-focus, --border-success, --border-danger
+Each preset defines: `palette`, `typography`, `identity` (the overall feel), and `imageMood` (Unsplash search keywords for hero/texture images).
 
-### Brand mint vs success green — NEVER confuse these
+### Preset A — "Organic Tech" (Clinical Boutique)
+- **Identity:** A bridge between a biological research lab and an avant-garde luxury magazine.
+- **Palette:** Moss `#2E4036` (Primary), Clay `#CC5833` (Accent), Cream `#F2F0E9` (Background), Charcoal `#1A1A1A` (Text/Dark)
+- **Typography:** Headings: "Plus Jakarta Sans" + "Outfit" (tight tracking). Drama: "Cormorant Garamond" Italic. Data: `"IBM Plex Mono"`.
+- **Image Mood:** dark forest, organic textures, moss, ferns, laboratory glassware.
+- **Hero line pattern:** "[Concept noun] is the" (Bold Sans) / "[Power word]." (Massive Serif Italic)
 
-Brand mint (#34D399 / #10B981) is for identity: primary buttons, active nav, reputation scores, focus rings.
-Success emerald (#22C55E / #16A34A) is for status: allow badges, positive PnL, policy pass indicators.
-These are two different greens serving two different purposes. They sit side by side in the UI and must remain distinguishable.
+### Preset B — "Midnight Luxe" (Dark Editorial)
+- **Identity:** A private members' club meets a high-end watchmaker's atelier.
+- **Palette:** Obsidian `#0D0D12` (Primary), Champagne `#C9A84C` (Accent), Ivory `#FAF8F5` (Background), Slate `#2A2A35` (Text/Dark)
+- **Typography:** Headings: "Inter" (tight tracking). Drama: "Playfair Display" Italic. Data: `"JetBrains Mono"`.
+- **Image Mood:** dark marble, gold accents, architectural shadows, luxury interiors.
+- **Hero line pattern:** "[Aspirational noun] meets" (Bold Sans) / "[Precision word]." (Massive Serif Italic)
 
-### Typography
+### Preset C — "Brutalist Signal" (Raw Precision)
+- **Identity:** A control room for the future — no decoration, pure information density.
+- **Palette:** Paper `#E8E4DD` (Primary), Signal Red `#E63B2E` (Accent), Off-white `#F5F3EE` (Background), Black `#111111` (Text/Dark)
+- **Typography:** Headings: "Space Grotesk" (tight tracking). Drama: "DM Serif Display" Italic. Data: `"Space Mono"`.
+- **Image Mood:** concrete, brutalist architecture, raw materials, industrial.
+- **Hero line pattern:** "[Direct verb] the" (Bold Sans) / "[System noun]." (Massive Serif Italic)
 
-- Two weights only: 400 (regular) and 500 (medium). NEVER use 600, 700, or bold.
-- Sentence case everywhere. No Title Case. No ALL CAPS except badge labels (ALLOWED, BLOCKED).
-- Monospace (JetBrains Mono / --font-mono) for ALL on-chain data: wallet addresses, tx hashes, evaluation IDs, JSON payloads, contract addresses.
-- No mid-sentence bolding. Entity names go in monospace, not bold.
-- Minimum font size: 11px.
+### Preset D — "Vapor Clinic" (Neon Biotech)
+- **Identity:** A genome sequencing lab inside a Tokyo nightclub.
+- **Palette:** Deep Void `#0A0A14` (Primary), Plasma `#7B61FF` (Accent), Ghost `#F0EFF4` (Background), Graphite `#18181B` (Text/Dark)
+- **Typography:** Headings: "Sora" (tight tracking). Drama: "Instrument Serif" Italic. Data: `"Fira Code"`.
+- **Image Mood:** bioluminescence, dark water, neon reflections, microscopy.
+- **Hero line pattern:** "[Tech noun] beyond" (Bold Sans) / "[Boundary word]." (Massive Serif Italic)
 
-### Spacing and borders
+---
 
-- All borders: 0.5px solid var(--border-default). Never 1px or 2px.
-- Border radius: 6px for badges/pills, 8px for inputs/buttons/tiles, 12px for cards/containers.
-- No rounded corners on single-sided borders (border-left accents on decision cards).
-- No box-shadows, no gradients, no glow effects. Flat surfaces only.
+## Fixed Design System (NEVER CHANGE)
 
-### Component-specific rules
+These rules apply to ALL presets. They are what make the output premium.
 
-Decision card left border: 3px solid. Allow = success green (#22C55E), Block = danger (#E74C6F).
-Status badges: 11px, weight 500, padding 2px 8px, radius 6px. Text color uses 800 stop from the same ramp as background — never use black or --text-primary on colored fills.
-Metric tiles: 20px value, 11px label, 11px subtitle. bg-card background with border-default.
-Buttons: Primary = Mint 400 bg (#34D399) with Mint 900 text (#064430). Secondary = transparent with border-hover.
+### Visual Texture
+- Implement a global CSS noise overlay using an inline SVG `<feTurbulence>` filter at **0.05 opacity** to eliminate flat digital gradients.
+- Use a `rounded-[2rem]` to `rounded-[3rem]` radius system for all containers. No sharp corners anywhere.
 
-### Dark mode
+### Micro-Interactions
+- All buttons must have a **"magnetic" feel**: subtle `scale(1.03)` on hover with `cubic-bezier(0.25, 0.46, 0.45, 0.94)`.
+- Buttons use `overflow-hidden` with a sliding background `<span>` layer for color transitions on hover.
+- Links and interactive elements get a `translateY(-1px)` lift on hover.
 
-Dark mode swaps light/dark stops. Data visualization colors (Success 400, Danger 400, Mint 400) stay the SAME in both modes. Surface 900 (#0A1210) becomes page background. Surface 800 (#243D35) becomes card background. All semantic tokens auto-resolve via CSS custom properties.
+### Animation Lifecycle
+- Use `gsap.context()` within `useEffect` for ALL animations. Return `ctx.revert()` in the cleanup function.
+- Default easing: `power3.out` for entrances, `power2.inOut` for morphs.
+- Stagger value: `0.08` for text, `0.15` for cards/containers.
 
-### Chart colors
+---
 
-- Drawdown vs baseline: protected line = #10B981 solid, unprotected baseline = #C8D8D3 dashed, prevention delta fill = #E6FBF3 at 60% opacity
-- PnL chart: #22C55E line with #ECFDF5 area fill
-- Reputation chart: #10B981 step line with #C8D8D3 dashed target benchmark
+## Component Architecture (NEVER CHANGE STRUCTURE — only adapt content/colors)
 
-### On-chain data formatting
+### A. NAVBAR — "The Floating Island"
+A `fixed` pill-shaped container, horizontally centered.
+- **Morphing Logic:** Transparent with light text at hero top. Transitions to `bg-[background]/60 backdrop-blur-xl` with primary-colored text and a subtle `border` when scrolled past the hero. Use `IntersectionObserver` or ScrollTrigger.
+- Contains: Logo (brand name as text), 3-4 nav links, CTA button (accent color).
 
-Wallet addresses and tx hashes: truncated with ellipsis showing first 6 + last 4 characters (e.g., 0x8f3a...c41d). Full values via copy-on-click. Contract addresses are never truncated in policy configuration views.
+### B. HERO SECTION — "The Opening Shot"
+- `100dvh` height. Full-bleed background image (sourced from Unsplash matching preset's `imageMood`) with a heavy **primary-to-black gradient overlay** (`bg-gradient-to-t`).
+- **Layout:** Content pushed to the **bottom-left third** using flex + padding.
+- **Typography:** Large scale contrast following the preset's hero line pattern. First part in bold sans heading font. Second part in massive serif italic drama font (3-5x size difference).
+- **Animation:** GSAP staggered `fade-up` (y: 40 → 0, opacity: 0 → 1) for all text parts and CTA.
+- CTA button below the headline, using the accent color.
 
-## Code conventions
+### C. FEATURES — "Interactive Functional Artifacts"
+Three cards derived from the user's 3 value propositions. These must feel like **functional software micro-UIs**, not static marketing cards. Each card gets one of these interaction patterns:
 
-- Functional components only. No class components.
-- Prefer named exports over default exports.
-- Use interface for object shapes, type for unions/intersections.
-- Keep files under 300 lines. Extract components when exceeding this.
-- All API response types defined in /lib/types.ts.
-- Mock data in /lib/mock-data.ts — keep as fallback even after API integration.
-- Use try/catch for all async operations. Show error states, never silent failures.
+**Card 1 — "Diagnostic Shuffler":** 3 overlapping cards that cycle vertically using `array.unshift(array.pop())` logic every 3 seconds with a spring-bounce transition (`cubic-bezier(0.34, 1.56, 0.64, 1)`). Labels derived from user's first value prop (generate 3 sub-labels).
 
-## Existing component library — do NOT rebuild these
+**Card 2 — "Telemetry Typewriter":** A monospace live-text feed that types out messages character-by-character related to the user's second value prop, with a blinking accent-colored cursor. Include a "Live Feed" label with a pulsing dot.
 
-The following components already exist from Phases 1-6. Import and use them, do not create duplicates:
-- StatusBadge (variants: allowed, blocked, active, inactive, pending, error)
-- MetricTile (props: label, value, subtitle, valueColor)
-- DecisionCard (props: decision object with all fields)
-- TxHashLink (props: hash, explorerBaseUrl)
-- WalletAddress (props: address)
-- LoadingSkeleton (variants: tile, card, chart)
-- EmptyState (props: title, description, ctaLabel, onCtaClick)
-- Toast (via context provider, variants: success, warning, error)
+**Card 3 — "Cursor Protocol Scheduler":** A weekly grid (S M T W T F S) where an animated SVG cursor enters, moves to a day cell, clicks (visual `scale(0.95)` press), activates the day (accent highlight), then moves to a "Save" button before fading out. Labels from user's third value prop.
 
-## Existing pages — do NOT rebuild these
+All cards: `bg-[background]` surface, subtle border, `rounded-[2rem]`, drop shadow. Each card has a heading (sans bold) and a brief descriptor.
 
-- /dashboard — metric tiles, 3 charts (drawdown, PnL, reputation), live decision feed
-- /simulate — intent form + verdict display with allow/block/idle states
-- /agents — agent list + registration modal with API key one-time reveal
-- /policies — policy list with venue allowlist, spend cap, daily loss budget editors
-- /audit — filterable decision log with sortable table
+### D. PHILOSOPHY — "The Manifesto"
+- Full-width section with the **dark color** as background.
+- A parallaxing organic texture image (Unsplash, `imageMood` keywords) at low opacity behind the text.
+- **Typography:** Two contrasting statements. Pattern:
+  - "Most [industry] focuses on: [common approach]." — neutral, smaller.
+  - "We focus on: [differentiated approach]." — massive, drama serif italic, accent-colored keyword.
+- **Animation:** GSAP `SplitText`-style reveal (word-by-word or line-by-line fade-up) triggered by ScrollTrigger.
 
-## API integration rules (Phase 7)
+### E. PROTOCOL — "Sticky Stacking Archive"
+3 full-screen cards that stack on scroll.
+- **Stacking Interaction:** Using GSAP ScrollTrigger with `pin: true`. As a new card scrolls into view, the card underneath scales to `0.9`, blurs to `20px`, and fades to `0.5`.
+- **Each card gets a unique canvas/SVG animation:**
+  1. A slowly rotating geometric motif (double-helix, concentric circles, or gear teeth).
+  2. A scanning horizontal laser-line moving across a grid of dots/cells.
+  3. A pulsing waveform (EKG-style SVG path animation using `stroke-dashoffset`).
+- Card content: Step number (monospace), title (heading font), 2-line description. Derive from user's brand purpose.
 
-- Base URL: NEXT_PUBLIC_API_URL env var (default: http://localhost:3001/api/v1)
-- Auth: SIWE (Sign-In With Ethereum). No email/password. No passwords stored.
-- All API requests include session token from SIWE auth flow.
-- Use SWR or React Query with 30-second revalidation for metrics.
-- Real-time decision feed: use EventSource (SSE), fall back to 10-second polling.
-- If NEXT_PUBLIC_API_URL is not set, fall back to mock data for demo mode.
-- Never store API keys in plaintext client-side.
+### F. MEMBERSHIP / PRICING
+- Three-tier pricing grid. Card names: "Essential", "Performance", "Enterprise" (adjust to fit brand).
+- **Middle card pops:** Primary-colored background with an accent CTA button. Slightly larger scale or `ring` border.
+- If pricing doesn't apply, convert this into a "Get Started" section with a single large CTA.
 
-## Animation rules
+### G. FOOTER
+- Deep dark-colored background, `rounded-t-[4rem]`.
+- Grid layout: Brand name + tagline, navigation columns, legal links.
+- **"System Operational" status indicator** with a pulsing green dot and monospace label.
 
-- All animations must respect prefers-reduced-motion.
-- Micro transitions: 150ms ease-out (borders, backgrounds, opacity).
-- Expand/collapse: 200ms ease-in-out (decision card drawers).
-- Page transitions: 250ms ease-out (route changes).
-- New decision feed items: slide down 200ms + fade in.
-- No decorative animations. Every animation communicates state change.
+---
 
-## Accessibility
+## Technical Requirements (NEVER CHANGE)
 
-- All text/background combinations must meet WCAG 2.1 AA (4.5:1 body, 3:1 large text).
-- Focus rings: 2px solid var(--border-focus) on :focus-visible only.
-- Status never communicated by color alone — badges include text labels, charts use solid vs dashed patterns.
+- **Stack:** React 19, Tailwind CSS v3.4.17, GSAP 3 (with ScrollTrigger plugin), Lucide React for icons.
+- **Fonts:** Load via Google Fonts `<link>` tags in `index.html` based on the selected preset.
+- **Images:** Use real Unsplash URLs. Select images matching the preset's `imageMood`. Never use placeholder URLs.
+- **File structure:** Single `App.jsx` with components defined in the same file (or split into `components/` if >600 lines). Single `index.css` for Tailwind directives + noise overlay + custom utilities.
+- **No placeholders.** Every card, every label, every animation must be fully implemented and functional.
+- **Responsive:** Mobile-first. Stack cards vertically on mobile. Reduce hero font sizes. Collapse navbar into a minimal version.
 
-## Security
+---
 
-- Never log API keys, wallet private keys, or session tokens to console.
-- All secrets in .env.local. Never hardcode credentials.
-- Validate all user input before processing (especially in simulate form).
-- SIWE session tokens in httpOnly cookies only.
+## Build Sequence
 
-## Git conventions
+After receiving answers to the 4 questions:
 
-- Use conventional commits: feat:, fix:, style:, refactor:, docs:
-- Branch naming: feature/*, fix/*, chore/*
+1. Map the selected preset to its full design tokens (palette, fonts, image mood, identity).
+2. Generate hero copy using the brand name + purpose + preset's hero line pattern.
+3. Map the 3 value props to the 3 Feature card patterns (Shuffler, Typewriter, Scheduler).
+4. Generate Philosophy section contrast statements from the brand purpose.
+5. Generate Protocol steps from the brand's process/methodology.
+6. Scaffold the project: `npm create vite@latest`, install deps, write all files.
+7. Ensure every animation is wired, every interaction works, every image loads.
+
+**Execution Directive:** "Do not build a website; build a digital instrument. Every scroll should feel intentional, every animation should feel weighted and professional. Eradicate all generic AI patterns."

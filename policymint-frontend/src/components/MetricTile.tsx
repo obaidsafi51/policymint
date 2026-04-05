@@ -31,10 +31,8 @@ export function MetricTile({ label, value, subtitle, valueColor = "primary", sub
   return (
     <div className="bg-card border-0.5 border-border-default rounded-tile p-5 flex flex-col relative overflow-hidden">
       <span className="text-[10px] text-secondary font-medium tracking-widest uppercase mb-3">{label}</span>
-      <div className="flex items-baseline justify-start gap-2">
-        <span className={clsx("text-[26px] font-medium font-mono tracking-tight", colorMap[valueColor])}>{value}</span>
-        {subtitle && <span className={clsx("text-xs font-mono font-medium truncate", colorMap[subtitleColor])}>{subtitle}</span>}
-      </div>
+      <span className={clsx("text-[26px] font-medium font-mono tracking-tight leading-none", colorMap[valueColor])}>{value}</span>
+      {subtitle && <span className={clsx("text-xs font-medium mt-2", colorMap[subtitleColor])}>{subtitle}</span>}
       {progress !== undefined && (
         <div className="absolute bottom-0 left-0 h-1 w-full bg-surface">
           <div className={clsx("h-full", bgMap[valueColor === "primary" ? "brand" : valueColor])} style={{ width: `${progress}%` }} />

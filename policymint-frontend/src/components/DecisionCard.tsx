@@ -4,43 +4,33 @@ import { Decision } from "@/lib/types";
 import { StatusBadge } from "./StatusBadge";
 import { TxHashLink } from "./TxHashLink";
 import { useState } from "react";
-import { ChevronDown, ChevronUp, CheckCircle2 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 
 interface DecisionCardProps {
   decision: Decision;
 }
 
-/** UTC wall time from ISO string — identical on server and client (avoids hydration mismatch). */
-function formatFeedTime(iso: string) {
-  if (!iso || iso.length < 19) return "—";
-  const part = iso.slice(11, 19);
-  return /^\d{2}:\d{2}:\d{2}$/.test(part) ? part : "—";
-}
-
 export function DecisionCard({ decision }: DecisionCardProps) {
   const isAllow = decision.result === "ALLOW";
   const [expanded, setExpanded] = useState(false);
-  const headline = decision.summary ?? `${decision.actionType}${decision.value ? ` · ${decision.value}` : ""}`;
+  const rawHeadline = decision.summary ?? `${decision.actionType}${decision.value ? ` · ${decision.value}` : ""}`;
+  const tradeLine = rawHeadline.replace(/\u2192/g, "->");
   const footer = isAllow ? decision.venue : decision.reason ?? decision.policyIdTriggered ?? "Policy enforcement";
+
+  const borderLeft = isAllow ? "border-l-success" : "border-l-danger";
 
   return (
     <div className="flex flex-col gap-2">
       <button
         type="button"
-        className={`w-full text-left bg-card border-0.5 border-border-default rounded-tile p-3 flex flex-col gap-2 transition-opacity hover:opacity-95 ${
-          isAllow ? "border-l-[3px] border-l-success pl-[10px]" : "border-l-[3px] border-l-danger pl-[10px]"
-        }`}
+        className={`w-full text-left bg-card border-y-0.5 border-r-0.5 border-border-default border-l-[3px] ${borderLeft} rounded-l-none rounded-r-tile p-3 flex flex-col gap-2 transition-opacity hover:opacity-95`}
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-start justify-between gap-2">
-          <span className="text-[10px] font-mono text-tertiary tabular-nums shrink-0">{formatFeedTime(decision.timestamp)}</span>
+          <span className="text-xs font-medium text-primary truncate">{decision.agentId}</span>
           <StatusBadge status={isAllow ? "allowed" : "blocked"} label={isAllow ? "ALLOWED" : "BLOCKED"} />
         </div>
-        <div className="flex items-center justify-between gap-1 min-w-0">
-          <span className="text-xs font-medium text-primary truncate">{decision.agentId}</span>
-          {expanded ? <ChevronUp size={14} className="text-tertiary shrink-0" /> : <ChevronDown size={14} className="text-tertiary shrink-0" />}
-        </div>
-        <p className="text-[11px] text-primary leading-snug">{headline}</p>
+        <p className="font-mono text-[11px] text-primary leading-snug">{tradeLine}</p>
         <p className="text-[10px] text-tertiary leading-snug line-clamp-2">{footer}</p>
       </button>
 

@@ -28,6 +28,15 @@
   --border-focus: #34d399;
   --border-success: #22c55e;
   --border-danger: #e74c6f;
+
+  /* Charts — derived from semantic tokens (no raw hex in components) */
+  --chart-protected-line: var(--text-brand);
+  --chart-baseline-line: var(--text-secondary);
+  --chart-delta-fill: color-mix(in srgb, var(--text-brand) 22%, transparent);
+  --chart-pnl-line: var(--text-success);
+  --chart-pnl-fill: color-mix(in srgb, var(--text-success) 18%, transparent);
+  --chart-rep-line: var(--text-brand);
+  --chart-rep-target: var(--text-secondary);
 }
 
 .dark {
@@ -56,6 +65,14 @@
   --border-focus: #34d399;
   --border-success: #22c55e;
   --border-danger: #e74c6f;
+
+  --chart-protected-line: var(--text-brand);
+  --chart-baseline-line: var(--text-tertiary);
+  --chart-delta-fill: color-mix(in srgb, var(--text-brand) 28%, transparent);
+  --chart-pnl-line: var(--text-brand);
+  --chart-pnl-fill: color-mix(in srgb, var(--text-brand) 16%, transparent);
+  --chart-rep-line: var(--text-brand);
+  --chart-rep-target: var(--text-secondary);
 }
 
 body {
