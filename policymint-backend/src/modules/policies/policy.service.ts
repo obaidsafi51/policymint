@@ -1,14 +1,17 @@
 import { prisma } from '../../db/client.js';
+import type { Prisma } from '@prisma/client';
 import type { CreatePolicyInput } from './policy.schema.js';
 
 export async function createPolicy(input: CreatePolicyInput) {
+  const data: Prisma.PolicyUncheckedCreateInput = {
+    agentId: input.agentId,
+    type: input.type,
+    params: input.params as Prisma.InputJsonValue,
+    isActive: input.isActive
+  };
+
   return prisma.policy.create({
-    data: {
-      agentId: input.agentId,
-      type: input.type,
-      params: input.params,
-      isActive: input.isActive
-    },
+    data,
     select: {
       id: true,
       agentId: true,
