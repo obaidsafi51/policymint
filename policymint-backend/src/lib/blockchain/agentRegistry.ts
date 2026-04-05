@@ -3,6 +3,7 @@ import { logger } from '../logger.js';
 import { AGENT_REGISTRY_ABI } from './abis.js';
 import { agentAccount, operatorAccount, operatorWalletClient, publicClient } from './client.js';
 import { txQueue } from './txQueue.js';
+import { parseEventLogs } from 'viem';
 
 export interface RegisterAgentParams {
   name: string;
@@ -16,7 +17,11 @@ export interface RegisterAgentResult {
   txHash: `0x${string}`;
 }
 
-const AGENT_REGISTRY = env.IDENTITY_REGISTRY_ADDRESS as `0x${string}` | undefined;
+const AGENT_REGISTRY =
+  (env.IDENTITY_REGISTRY_ADDRESS ??
+    (process.env.AGENT_REGISTRY_ADDRESS as `0x${string}` | undefined)) as
+    | `0x${string}`
+    | undefined;
 
 export function canRegisterAgentOnChain() {
   return Boolean(AGENT_REGISTRY);
@@ -26,7 +31,9 @@ export async function registerAgentOnChain(
   params: RegisterAgentParams,
 ): Promise<RegisterAgentResult> {
   if (!AGENT_REGISTRY) {
-    throw new Error('IDENTITY_REGISTRY_ADDRESS missing; on-chain agent registration is disabled');
+    throw new Error(
+      'IDENTITY_REGISTRY_ADDRESS/AGENT_REGISTRY_ADDRESS missing; on-chain agent registration is disabled',
+    );
   }
 
   logger.info(
@@ -67,9 +74,21 @@ export async function registerAgentOnChain(
   let parsedAgentId = BigInt(0);
   const registryAddress = AGENT_REGISTRY.toLowerCase();
 
-  for (const log of receipt.logs) {
-    if (log.address.toLowerCase() !== registryAddress) {
-      continue;
+  const registryLogs = receipt.logs.filter(log => log.address.toLowerCase() === registryAddress);
+  const decoded = parseEventLogs({
+    abi: AGENT_REGISTRY_ABI,
+    eventName: 'AgentRegistered',
+    logs: registryLogs,
+    strict: false,
+  });
+
+  if (decoded.length > 0 && typeof decoded[0]?.args.agentId === 'bigint') {
+    parsedAgentId = decoded[0].args.agentId;
+  }
+
+  for (const log of registryLogs) {
+    if (parsedAgentId > BigInt(0)) {
+      break;
     }
 
     if (log.topics[1]) {
