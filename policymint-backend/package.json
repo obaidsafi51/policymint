@@ -11,7 +11,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc --project tsconfig.build.json",
+    "build": "prisma generate && tsc --project tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config ./vitest.config.ts",
