@@ -1,5 +1,15 @@
 export const AGENT_REGISTRY_ABI = [
   {
+    name: 'AgentRegistered',
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'agentId', type: 'uint256' },
+      { indexed: true, name: 'operatorWallet', type: 'address' },
+      { indexed: true, name: 'agentWallet', type: 'address' },
+    ],
+  },
+  {
     name: 'register',
     type: 'function',
     stateMutability: 'nonpayable',

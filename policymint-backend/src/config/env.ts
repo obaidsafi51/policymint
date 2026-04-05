@@ -32,6 +32,10 @@ const EnvSchema = z.object({
     emptyToUndefined,
     z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
   ),
+  AGENT_REGISTRY_ADDRESS: z.preprocess(
+    emptyToUndefined,
+    z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+  ),
   VALIDATION_REGISTRY_ADDRESS: z.preprocess(
     emptyToUndefined,
     z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),

@@ -60,16 +60,11 @@ export async function agentRoutes(app: FastifyInstance) {
           },
         } as never) as { id: string; vaultClaimedAt: Date | null } | null;
 
-        if (!agentBeforeClaim?.vaultClaimedAt) {
-          await claimHackathonAllocation(agentId);
-        }
-
         responseAgent = await prisma.agent.update({
           where: { id: result.agent.id },
           data: {
             erc8004TokenId: agentId.toString(),
             registrationTxHash: txHash,
-            vaultClaimedAt: agentBeforeClaim?.vaultClaimedAt ?? new Date(),
           },
           select: {
             id: true,
@@ -83,11 +78,42 @@ export async function agentRoutes(app: FastifyInstance) {
             createdAt: true,
           },
         } as never);
+
+        if (!agentBeforeClaim?.vaultClaimedAt) {
+          try {
+            await claimHackathonAllocation(agentId);
+
+            responseAgent = await prisma.agent.update({
+              where: { id: result.agent.id },
+              data: {
+                vaultClaimedAt: new Date(),
+              },
+              select: {
+                id: true,
+                name: true,
+                walletAddress: true,
+                strategyType: true,
+                chainId: true,
+                erc8004TokenId: true,
+                registrationTxHash: true,
+                vaultClaimedAt: true,
+                createdAt: true,
+              },
+            } as never);
+          } catch (claimErr) {
+            app.log.error(
+              { err: claimErr, agent_id: result.agent.id, agent_token_id: agentId.toString() },
+              'Vault claim failed after successful on-chain registration',
+            );
+          }
+        }
       } catch (err) {
         app.log.error({ err, agent_id: result.agent.id }, 'On-chain agent registration failed');
       }
     } else {
-      app.log.warn('IDENTITY_REGISTRY_ADDRESS missing; skipping on-chain registration');
+      app.log.warn(
+        'IDENTITY_REGISTRY_ADDRESS/AGENT_REGISTRY_ADDRESS missing; skipping on-chain registration',
+      );
     }
 
     return reply.status(201).send({
