@@ -14,10 +14,20 @@ export const publicClient = createPublicClient({
   transport,
 });
 
-export const signerAccount = privateKeyToAccount(env.POLICY_SIGNER_PRIVATE_KEY as `0x${string}`);
+export const operatorAccount = privateKeyToAccount(env.OPERATOR_WALLET_PRIVATE_KEY as `0x${string}`);
+export const agentAccount = privateKeyToAccount(env.AGENT_WALLET_PRIVATE_KEY as `0x${string}`);
 
-export const walletClient = createWalletClient({
-  account: signerAccount,
+export const operatorWalletClient = createWalletClient({
+  account: operatorAccount,
   chain: sepolia,
   transport,
 });
+
+export const agentWalletClient = createWalletClient({
+  account: agentAccount,
+  chain: sepolia,
+  transport,
+});
+
+export const signerAccount = operatorAccount;
+export const walletClient = operatorWalletClient;

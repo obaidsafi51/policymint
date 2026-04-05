@@ -1,11 +1,13 @@
 import { ActionType, EvaluationResult, PolicyType, Prisma } from '@prisma/client';
 import { prisma } from '../../db/client.js';
 import { generateId } from '../../lib/uuid.js';
+import { agentAccount } from '../../lib/blockchain/client.js';
 import type { EvaluateIntentInput } from './evaluate.schema.js';
 import { signEvaluatedIntent } from './eip712.service.js';
 import { evaluateDailyLossBudget } from './evaluators/daily-loss-budget.js';
 import { evaluateSpendCapPerTx } from './evaluators/spend-cap-per-tx.js';
 import { evaluateVenueAllowlist, type EvaluatorResult } from './evaluators/venue-allowlist.js';
+import { mapToRiskRouterIntent, type RiskRouterTradeIntent } from './trade-intent.mapper.js';
 
 interface EvaluateIntentResponse {
   result: 'allow' | 'block';
@@ -13,6 +15,22 @@ interface EvaluateIntentResponse {
   policy_id: string | null;
   evaluation_id: string;
   eip712_signed_intent: string;
+  riskIntentForExecution: RiskRouterTradeIntent | null;
+}
+
+const MAX_ALLOWED_TRADES_PER_HOUR = 8;
+
+function fallbackRiskIntent(intent: EvaluateIntentInput) {
+  return {
+    agentId: BigInt(0),
+    agentWallet: agentAccount.address,
+    pair: `${intent.token_in.toUpperCase()}${(intent.token_out ?? 'USD').toUpperCase()}`,
+    action: intent.action_type === 'trade' || intent.action_type === 'swap' ? 'BUY' : 'SELL',
+    amountUsdScaled: BigInt(0),
+    maxSlippageBps: BigInt(50),
+    nonce: BigInt(0),
+    deadline: BigInt(Math.floor(Date.now() / 1_000) + 300),
+  };
 }
 
 export class EvaluationServiceError extends Error {
@@ -62,6 +80,22 @@ async function getCurrentDailyAllowedTotalWei(agentId: string): Promise<string> 
   return '0';
 }
 
+async function getAllowedTradesLastHour(agentId: string): Promise<number> {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1_000);
+
+  const count = await prisma.intentEvaluation.count({
+    where: {
+      agentId,
+      result: EvaluationResult.ALLOW,
+      createdAt: {
+        gte: oneHourAgo,
+      },
+    },
+  });
+
+  return count;
+}
+
 function evaluatePolicy(input: {
   intent: EvaluateIntentInput;
   policyType: PolicyType;
@@ -91,7 +125,10 @@ function evaluatePolicy(input: {
 export async function evaluateIntent(intent: EvaluateIntentInput): Promise<EvaluateIntentResponse> {
   const agent = await prisma.agent.findUnique({
     where: { id: intent.agent_id },
-    select: { id: true }
+    select: {
+      id: true,
+      erc8004TokenId: true,
+    }
   });
 
   if (!agent) {
@@ -119,7 +156,13 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
   let reason: string | null = null;
   let policyId: string | null = null;
 
-  for (const policy of activePolicies) {
+  const allowedTradesLastHour = await getAllowedTradesLastHour(intent.agent_id);
+  if (allowedTradesLastHour >= MAX_ALLOWED_TRADES_PER_HOUR) {
+    result = 'block';
+    reason = `Trade rate limit exceeded: max ${MAX_ALLOWED_TRADES_PER_HOUR} allowed trades per rolling hour.`;
+  }
+
+  for (const policy of result === 'allow' ? activePolicies : []) {
     const currentDailyTotalWei =
       policy.type === 'DAILY_LOSS_BUDGET' ? await getCurrentDailyAllowedTotalWei(intent.agent_id) : '0';
 
@@ -138,7 +181,37 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
     }
   }
 
-  const eip712SignedIntent = await signEvaluatedIntent({ intent, result });
+  let eip712SignedIntent = '';
+  let riskIntentForExecution: RiskRouterTradeIntent | null = null;
+
+  if (result === 'allow' && agent.erc8004TokenId) {
+    const nonceRows = await prisma.$queryRaw<Array<{ next_nonce: number }>>`
+      UPDATE agents
+      SET last_nonce = COALESCE(last_nonce, 0) + 1
+      WHERE id = ${intent.agent_id}::uuid
+      RETURNING last_nonce AS next_nonce
+    `;
+
+    const nextNonce = nonceRows[0]?.next_nonce;
+
+    if (typeof nextNonce !== 'number') {
+      throw new EvaluationServiceError('Failed to allocate nonce for agent', 500);
+    }
+
+    const riskIntent = await mapToRiskRouterIntent({
+      intent,
+      erc8004TokenId: agent.erc8004TokenId,
+      agentWalletAddress: agentAccount.address,
+      nonce: nextNonce,
+      defaultMaxSlippageBps: 50,
+    });
+
+    riskIntentForExecution = riskIntent;
+    eip712SignedIntent = await signEvaluatedIntent({ intent: riskIntent });
+  } else {
+    eip712SignedIntent = await signEvaluatedIntent({ intent: fallbackRiskIntent(intent) });
+  }
+
   const evaluationId = generateId();
 
   await prisma.intentEvaluation.create({
@@ -164,6 +237,7 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
     reason,
     policy_id: policyId,
     evaluation_id: evaluationId,
-    eip712_signed_intent: eip712SignedIntent
+    eip712_signed_intent: eip712SignedIntent,
+    riskIntentForExecution,
   };
 }

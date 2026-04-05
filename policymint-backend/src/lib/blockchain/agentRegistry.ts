@@ -1,13 +1,14 @@
 import { env } from '../../config/env.js';
 import { logger } from '../logger.js';
 import { AGENT_REGISTRY_ABI } from './abis.js';
-import { publicClient, signerAccount, walletClient } from './client.js';
+import { agentAccount, operatorAccount, operatorWalletClient, publicClient } from './client.js';
 import { txQueue } from './txQueue.js';
 
 export interface RegisterAgentParams {
   name: string;
-  metadataURI: string;
-  strategyType: string;
+  description: string;
+  capabilities: string[];
+  agentURI: string;
 }
 
 export interface RegisterAgentResult {
@@ -32,22 +33,24 @@ export async function registerAgentOnChain(
     {
       contract: 'AgentRegistry',
       name: params.name,
-      strategyType: params.strategyType,
+      capabilities: params.capabilities,
+      operatorWallet: operatorAccount.address,
+      agentWallet: agentAccount.address,
     },
-    'Submitting registerAgent transaction',
+    'Submitting register transaction',
   );
 
   const txHash = await txQueue.add(() =>
-    walletClient.writeContract({
+    operatorWalletClient.writeContract({
       address: AGENT_REGISTRY,
       abi: AGENT_REGISTRY_ABI,
-      functionName: 'registerAgent',
-      args: [params.name, params.metadataURI, BigInt(11155111), params.strategyType],
-      account: signerAccount,
+      functionName: 'register',
+      args: [agentAccount.address, params.name, params.description, params.capabilities, params.agentURI],
+      account: operatorAccount,
     }),
   );
 
-  logger.info({ contract: 'AgentRegistry', txHash }, 'registerAgent transaction submitted');
+  logger.info({ contract: 'AgentRegistry', txHash }, 'register transaction submitted');
 
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
@@ -56,10 +59,10 @@ export async function registerAgentOnChain(
   });
 
   if (receipt.status !== 'success') {
-    throw new Error(`AgentRegistry.registerAgent() reverted. tx: ${txHash}`);
+    throw new Error(`AgentRegistry.register() reverted. tx: ${txHash}`);
   }
 
-  logger.info({ contract: 'AgentRegistry', txHash }, 'registerAgent transaction confirmed');
+  logger.info({ contract: 'AgentRegistry', txHash }, 'register transaction confirmed');
 
   let parsedAgentId = BigInt(0);
   const registryAddress = AGENT_REGISTRY.toLowerCase();

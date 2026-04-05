@@ -2,7 +2,7 @@ import { encodePacked, keccak256 } from 'viem';
 import { env } from '../../config/env.js';
 import { logger } from '../logger.js';
 import { VALIDATION_REGISTRY_ABI } from './abis.js';
-import { publicClient, signerAccount, walletClient } from './client.js';
+import { operatorAccount, operatorWalletClient, publicClient } from './client.js';
 import { txQueue } from './txQueue.js';
 
 const VALIDATION_REGISTRY = env.VALIDATION_REGISTRY_ADDRESS as `0x${string}` | undefined;
@@ -10,8 +10,8 @@ const VALIDATION_REGISTRY = env.VALIDATION_REGISTRY_ADDRESS as `0x${string}` | u
 export interface PostValidationParams {
   agentId: bigint;
   evaluationId: string;
-  result: boolean;
-  eip712Signature: `0x${string}`;
+  score: number;
+  notes: string;
   checkpointData: {
     action_type: string;
     venue: string;
@@ -39,11 +39,6 @@ function buildCheckpointHash(data: PostValidationParams['checkpointData']): `0x$
   );
 }
 
-function uuidToBytes32(uuid: string): `0x${string}` {
-  const hex = uuid.replace(/-/g, '');
-  return `0x${hex.padStart(64, '0')}` as `0x${string}`;
-}
-
 export async function postValidationRecord(
   params: PostValidationParams,
 ): Promise<PostValidationResult> {
@@ -51,7 +46,6 @@ export async function postValidationRecord(
     throw new Error('VALIDATION_REGISTRY_ADDRESS missing; validation emission is disabled');
   }
 
-  const evaluationIdBytes32 = uuidToBytes32(params.evaluationId);
   const checkpointHash = buildCheckpointHash(params.checkpointData);
 
   logger.info(
@@ -59,31 +53,25 @@ export async function postValidationRecord(
       contract: 'ValidationRegistry',
       agentId: params.agentId.toString(),
       evaluationId: params.evaluationId,
-      result: params.result,
+      score: params.score,
     },
-    'Submitting postValidation',
+    'Submitting postEIP712Attestation',
   );
 
   const txHash = await txQueue.add(() =>
-    walletClient.writeContract({
+    operatorWalletClient.writeContract({
       address: VALIDATION_REGISTRY,
       abi: VALIDATION_REGISTRY_ABI,
-      functionName: 'postValidation',
-      args: [
-        params.agentId,
-        evaluationIdBytes32,
-        params.result,
-        checkpointHash,
-        params.eip712Signature,
-      ],
-      account: signerAccount,
+      functionName: 'postEIP712Attestation',
+      args: [params.agentId, checkpointHash, params.score, params.notes],
+      account: operatorAccount,
       gas: BigInt(200_000),
     }),
   );
 
   logger.info(
     { contract: 'ValidationRegistry', txHash, evaluationId: params.evaluationId },
-    'postValidation submitted',
+    'postEIP712Attestation submitted',
   );
 
   const receipt = await publicClient.waitForTransactionReceipt({
@@ -93,12 +81,12 @@ export async function postValidationRecord(
   });
 
   if (receipt.status !== 'success') {
-    throw new Error(`ValidationRegistry.postValidation() reverted. tx: ${txHash}`);
+    throw new Error(`ValidationRegistry.postEIP712Attestation() reverted. tx: ${txHash}`);
   }
 
   logger.info(
     { contract: 'ValidationRegistry', txHash, blockNumber: receipt.blockNumber.toString() },
-    'postValidation confirmed',
+    'postEIP712Attestation confirmed',
   );
 
   return {

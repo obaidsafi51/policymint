@@ -15,7 +15,12 @@ const EnvSchema = z.object({
   DIRECT_URL: z.string().url(),
   API_KEY_SALT_ROUNDS: z.coerce.number().default(12),
   JWT_SECRET: z.string().min(32),
-  POLICY_SIGNER_PRIVATE_KEY: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+  OPERATOR_WALLET_PRIVATE_KEY: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+  AGENT_WALLET_PRIVATE_KEY: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+  POLICY_SIGNER_PRIVATE_KEY: z.preprocess(
+    emptyToUndefined,
+    z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional(),
+  ),
   ALCHEMY_RPC_URL: z.string().url(),
 
   SEPOLIA_RPC_FALLBACK: z.string().url().default('https://ethereum-sepolia-rpc.publicnode.com/'),

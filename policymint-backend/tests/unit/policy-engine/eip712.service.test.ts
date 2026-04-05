@@ -1,24 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EvaluateIntentInput } from '../../../src/modules/policy-engine/evaluate.schema';
+import type { RiskRouterTradeIntent } from '../../../src/modules/policy-engine/trade-intent.mapper';
 
 const TEST_SIGNER_PRIVATE_KEY =
   '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
-const ORIGINAL_SIGNER_PRIVATE_KEY = process.env.POLICY_SIGNER_PRIVATE_KEY;
+const ORIGINAL_AGENT_WALLET_PRIVATE_KEY = process.env.AGENT_WALLET_PRIVATE_KEY;
 
-const validIntent: EvaluateIntentInput = {
-  agent_id: '550e8400-e29b-41d4-a716-446655440000',
-  action_type: 'trade',
-  venue: 'kraken-spot',
-  amount: '1000000000000000000',
-  token_in: 'ETH',
-  token_out: 'USDC',
-  eip712_domain: {
-    name: 'PolicyMint',
-    version: '1',
-    chainId: 11155111,
-    verifyingContract: '0x0000000000000000000000000000000000000000'
-  },
-  params: {}
+const validIntent: RiskRouterTradeIntent = {
+  agentId: BigInt(42),
+  agentWallet: '0x0000000000000000000000000000000000000002',
+  pair: 'ETHUSDC',
+  action: 'BUY',
+  amountUsdScaled: BigInt(450_000_000),
+  maxSlippageBps: BigInt(50),
+  nonce: BigInt(7),
+  deadline: BigInt(1_700_000_300),
 };
 
 async function loadSigner() {
@@ -28,136 +23,84 @@ async function loadSigner() {
 describe('eip712.service', () => {
   beforeEach(() => {
     vi.resetModules();
-    process.env.POLICY_SIGNER_PRIVATE_KEY = ORIGINAL_SIGNER_PRIVATE_KEY ?? TEST_SIGNER_PRIVATE_KEY;
+    process.env.AGENT_WALLET_PRIVATE_KEY = ORIGINAL_AGENT_WALLET_PRIVATE_KEY ?? TEST_SIGNER_PRIVATE_KEY;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    process.env.POLICY_SIGNER_PRIVATE_KEY = ORIGINAL_SIGNER_PRIVATE_KEY ?? TEST_SIGNER_PRIVATE_KEY;
+    process.env.AGENT_WALLET_PRIVATE_KEY = ORIGINAL_AGENT_WALLET_PRIVATE_KEY ?? TEST_SIGNER_PRIVATE_KEY;
   });
 
   it('returns a 0x-prefixed 65-byte signature on happy path', async () => {
-    const dateSpy = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
     const { signEvaluatedIntent } = await loadSigner();
 
     const signature = await signEvaluatedIntent({
       intent: validIntent,
-      result: 'allow'
     });
 
     expect(signature).toMatch(/^0x[a-fA-F0-9]{130}$/);
     expect(signature.length).toBe(132);
-    dateSpy.mockRestore();
   });
 
   it('is deterministic for identical key and message', async () => {
-    const dateSpy = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
     const { signEvaluatedIntent } = await loadSigner();
 
-    const first = await signEvaluatedIntent({ intent: validIntent, result: 'allow' });
-    const second = await signEvaluatedIntent({ intent: validIntent, result: 'allow' });
+    const first = await signEvaluatedIntent({ intent: validIntent });
+    const second = await signEvaluatedIntent({ intent: validIntent });
 
     expect(first).toBe(second);
-    dateSpy.mockRestore();
-  });
-
-  it('throws for non-allowlisted chainId', async () => {
-    const { signEvaluatedIntent } = await loadSigner();
-
-    await expect(
-      signEvaluatedIntent({
-        intent: {
-          ...validIntent,
-          eip712_domain: {
-            ...validIntent.eip712_domain,
-            chainId: 1
-          }
-        },
-        result: 'allow'
-      })
-    ).rejects.toThrow('not permitted');
-  });
-
-  it('does not throw for allowlisted chainId', async () => {
-    const dateSpy = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
-    const { signEvaluatedIntent } = await loadSigner();
-
-    await expect(
-      signEvaluatedIntent({
-        intent: {
-          ...validIntent,
-          eip712_domain: {
-            ...validIntent.eip712_domain,
-            chainId: 11155111
-          }
-        },
-        result: 'allow'
-      })
-    ).resolves.toMatch(/^0x[a-fA-F0-9]{130}$/);
-
-    dateSpy.mockRestore();
   });
 
   it('throws during module initialization when signer env var is missing', async () => {
-    const previousValue = process.env.POLICY_SIGNER_PRIVATE_KEY;
+    const previousValue = process.env.AGENT_WALLET_PRIVATE_KEY;
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: string | number | null) => {
       throw new Error(`process.exit:${code}`);
     }) as never);
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
     try {
-      delete process.env.POLICY_SIGNER_PRIVATE_KEY;
+      delete process.env.AGENT_WALLET_PRIVATE_KEY;
       vi.resetModules();
       await expect(loadSigner()).rejects.toThrow('process.exit:1');
       expect(exitSpy).toHaveBeenCalledWith(1);
     } finally {
-      process.env.POLICY_SIGNER_PRIVATE_KEY = previousValue ?? TEST_SIGNER_PRIVATE_KEY;
+      process.env.AGENT_WALLET_PRIVATE_KEY = previousValue ?? TEST_SIGNER_PRIVATE_KEY;
       vi.resetModules();
     }
   });
 
-  it('captures result field in signed payload by producing different signatures for allow vs block', async () => {
-    const dateSpy = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+  it('produces different signatures when action changes', async () => {
     const { signEvaluatedIntent } = await loadSigner();
 
-    const allowSignature = await signEvaluatedIntent({ intent: validIntent, result: 'allow' });
-    const blockSignature = await signEvaluatedIntent({ intent: validIntent, result: 'block' });
+    const buySignature = await signEvaluatedIntent({ intent: validIntent });
+    const sellSignature = await signEvaluatedIntent({ intent: { ...validIntent, action: 'SELL' } });
 
-    expect(allowSignature).not.toBe(blockSignature);
-    dateSpy.mockRestore();
+    expect(buySignature).not.toBe(sellSignature);
   });
 
-  it('produces different signatures when token_out changes', async () => {
-    const dateSpy = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+  it('produces different signatures when nonce changes', async () => {
     const { signEvaluatedIntent } = await loadSigner();
 
     const original = await signEvaluatedIntent({
-      intent: { ...validIntent, token_out: 'USDC' },
-      result: 'allow'
+      intent: validIntent,
     });
     const changed = await signEvaluatedIntent({
-      intent: { ...validIntent, token_out: 'DAI' },
-      result: 'allow'
+      intent: { ...validIntent, nonce: BigInt(8) },
     });
 
     expect(original).not.toBe(changed);
-    dateSpy.mockRestore();
   });
 
-  it('produces different signatures when params object changes', async () => {
-    const dateSpy = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+  it('produces different signatures when amountUsdScaled changes', async () => {
     const { signEvaluatedIntent } = await loadSigner();
 
     const original = await signEvaluatedIntent({
-      intent: { ...validIntent, params: { slippage_bps: 50 } },
-      result: 'allow'
+      intent: validIntent,
     });
     const changed = await signEvaluatedIntent({
-      intent: { ...validIntent, params: { slippage_bps: 100 } },
-      result: 'allow'
+      intent: { ...validIntent, amountUsdScaled: BigInt(451_000_000) },
     });
 
     expect(original).not.toBe(changed);
-    dateSpy.mockRestore();
   });
 });

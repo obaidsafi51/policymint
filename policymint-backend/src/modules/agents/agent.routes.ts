@@ -10,6 +10,13 @@ const AgentIdParamsSchema = z.object({
   id: z.string().uuid()
 });
 
+const AGENT_METADATA_TYPE = 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1';
+
+function toDataUriJson(data: Record<string, unknown>) {
+  const payload = Buffer.from(JSON.stringify(data), 'utf8').toString('base64');
+  return `data:application/json;base64,${payload}`;
+}
+
 export async function agentRoutes(app: FastifyInstance) {
   app.post('/', async (request, reply) => {
     const body = RegisterAgentSchema.safeParse(request.body);
@@ -22,11 +29,27 @@ export async function agentRoutes(app: FastifyInstance) {
 
     if (canRegisterAgentOnChain()) {
       try {
-        const metadataURI = body.data.metadataUri ?? `https://policymint.xyz/agents/${result.agent.id}`;
+        const frontendUrl = 'https://policymint.vercel.app';
+        const agentURI = body.data.metadataUri
+          ? body.data.metadataUri
+          : toDataUriJson({
+              type: AGENT_METADATA_TYPE,
+              name: body.data.name,
+              description: `${body.data.strategyType} strategy agent managed by PolicyMint`,
+              services: [
+                {
+                  type: 'dashboard',
+                  endpoint: frontendUrl,
+                },
+              ],
+              active: true,
+            });
+
         const { agentId, txHash } = await registerAgentOnChain({
           name: body.data.name,
-          metadataURI,
-          strategyType: body.data.strategyType.toLowerCase(),
+          description: `${body.data.strategyType} strategy agent managed by PolicyMint`,
+          capabilities: ['policy-evaluation', 'risk-routing', 'eip712-signing'],
+          agentURI,
         });
 
         const agentBeforeClaim = await prisma.agent.findUnique({

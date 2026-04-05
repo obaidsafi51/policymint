@@ -608,6 +608,38 @@ describeDb('POST /v1/evaluate', () => {
     expect(eleventhResponse.statusCode).toBe(429);
   });
 
+  it('blocks once 8 allowed trades were recorded in the last rolling hour', async () => {
+    const { id, apiKey } = await createAgent();
+
+    const recent = new Date(Date.now() - 10 * 60 * 1_000);
+    const historicalAllows = Array.from({ length: 8 }, (_, index) => ({
+      id: generateId(),
+      agentId: id,
+      actionType: 'TRADE' as const,
+      venue: 'kraken-spot',
+      amountRaw: '1000000000000000000',
+      tokenIn: 'ETH',
+      tokenOut: 'USDC',
+      result: 'ALLOW' as const,
+      createdAt: new Date(recent.getTime() + index * 1_000),
+    }));
+
+    await prisma.intentEvaluation.createMany({ data: historicalAllows });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/evaluate',
+      headers: { authorization: `Bearer ${apiKey}` },
+      payload: basePayload(id),
+    });
+
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.result).toBe('block');
+    expect(body.reason).toContain('max 8 allowed trades per rolling hour');
+  });
+
   it('returns sanitized 500 error when persistence fails and does not expose stack trace', async () => {
     const { id, apiKey } = await createAgent();
     vi.spyOn(prisma.intentEvaluation, 'create').mockRejectedValue(new Error('db write failure'));

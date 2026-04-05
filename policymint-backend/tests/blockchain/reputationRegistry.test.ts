@@ -19,8 +19,8 @@ vi.mock('../../src/lib/logger', () => ({
 }));
 
 vi.mock('../../src/lib/blockchain/client', () => ({
-  signerAccount: { address: '0x0000000000000000000000000000000000000001' },
-  walletClient: {
+  operatorAccount: { address: '0x0000000000000000000000000000000000000001' },
+  operatorWalletClient: {
     writeContract: writeContractMock,
   },
   publicClient: {
@@ -37,19 +37,27 @@ describe('reputationRegistry', () => {
   });
 
   it('emits a positive reputation signal successfully', async () => {
-    const { emitReputationSignal } = await import('../../src/lib/blockchain/reputationRegistry');
+    const { emitReputationSignal, FeedbackType } = await import('../../src/lib/blockchain/reputationRegistry');
 
     const txHash = await emitReputationSignal({
       agentId: BigInt(42),
-      positive: true,
-      reason: 'Policy allow: trade on kraken-spot',
+      score: 80,
+      outcomeRef: `0x${'f'.repeat(64)}`,
+      comment: 'Trade executed within policy bounds',
+      feedbackType: FeedbackType.TRADE_EXECUTION,
     });
 
     expect(txHash).toBe('0xabc123');
     expect(writeContractMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        functionName: 'emitSignal',
-        args: [BigInt(42), true, 'Policy allow: trade on kraken-spot'],
+        functionName: 'submitFeedback',
+        args: [
+          BigInt(42),
+          80,
+          `0x${'f'.repeat(64)}`,
+          'Trade executed within policy bounds',
+          0,
+        ],
       }),
     );
   });
@@ -63,7 +71,7 @@ describe('reputationRegistry', () => {
     expect(score).toBe(17);
     expect(readContractMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        functionName: 'getScore',
+        functionName: 'getAverageScore',
         args: [BigInt(42)],
       }),
     );
@@ -71,14 +79,30 @@ describe('reputationRegistry', () => {
 
   it('throws when emission receipt status is reverted', async () => {
     waitForReceiptMock.mockResolvedValue({ status: 'reverted' });
-    const { emitReputationSignal } = await import('../../src/lib/blockchain/reputationRegistry');
+    const { emitReputationSignal, FeedbackType } = await import('../../src/lib/blockchain/reputationRegistry');
 
     await expect(
       emitReputationSignal({
         agentId: BigInt(42),
-        positive: false,
-        reason: 'Policy block',
+        score: 20,
+        outcomeRef: `0x${'e'.repeat(64)}`,
+        comment: 'Trade blocked: policy violation',
+        feedbackType: FeedbackType.RISK_MANAGEMENT,
       }),
     ).rejects.toThrow();
+  });
+
+  it('throws when score is out of contract bounds', async () => {
+    const { emitReputationSignal, FeedbackType } = await import('../../src/lib/blockchain/reputationRegistry');
+
+    await expect(
+      emitReputationSignal({
+        agentId: BigInt(42),
+        score: 0,
+        outcomeRef: `0x${'d'.repeat(64)}`,
+        comment: 'Invalid score payload',
+        feedbackType: FeedbackType.GENERAL,
+      }),
+    ).rejects.toThrow('score must be between 1 and 100');
   });
 });

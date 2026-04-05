@@ -1,61 +1,57 @@
-import { parseUnits } from 'viem';
 import { env } from '../../config/env.js';
 import { logger } from '../logger.js';
 import { RISK_ROUTER_ABI } from './abis.js';
-import { publicClient, signerAccount, walletClient } from './client.js';
+import { operatorAccount, operatorWalletClient, publicClient } from './client.js';
 import { txQueue } from './txQueue.js';
 
 const RISK_ROUTER = env.RISK_ROUTER_ADDRESS as `0x${string}`;
-const ETH_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE' as `0x${string}`;
 
-export interface SwapParams {
+export interface TradeIntent {
   agentId: bigint;
-  tokenIn: `0x${string}` | 'ETH';
-  tokenOut: `0x${string}` | 'ETH';
-  amountIn: string;
-  amountInDecimals?: number;
-  minAmountOut: bigint;
-  eip712Authorization: `0x${string}`;
+  agentWallet: `0x${string}`;
+  pair: string;
+  action: string;
+  amountUsdScaled: bigint;
+  maxSlippageBps: bigint;
+  nonce: bigint;
+  deadline: bigint;
 }
 
-export interface SwapResult {
+export interface SubmitTradeIntentParams {
+  intent: TradeIntent;
+  signature: `0x${string}`;
+}
+
+export interface SubmitTradeIntentResult {
   txHash: `0x${string}`;
 }
 
-export async function routeSwap(params: SwapParams): Promise<SwapResult> {
-  const tokenInAddress = params.tokenIn === 'ETH' ? ETH_ADDRESS : params.tokenIn;
-  const tokenOutAddress = params.tokenOut === 'ETH' ? ETH_ADDRESS : params.tokenOut;
-  const amountInWei = parseUnits(params.amountIn, params.amountInDecimals ?? 18);
+export async function submitTradeIntent(
+  params: SubmitTradeIntentParams,
+): Promise<SubmitTradeIntentResult> {
 
   logger.info(
     {
       contract: 'RiskRouter',
-      agentId: params.agentId.toString(),
-      amountIn: params.amountIn,
+      agentId: params.intent.agentId.toString(),
+      pair: params.intent.pair,
+      action: params.intent.action,
     },
-    'Submitting executeSwap',
+    'Submitting submitTradeIntent',
   );
 
   const txHash = await txQueue.add(() =>
-    walletClient.writeContract({
+    operatorWalletClient.writeContract({
       address: RISK_ROUTER,
       abi: RISK_ROUTER_ABI,
-      functionName: 'executeSwap',
-      args: [
-        params.agentId,
-        tokenInAddress,
-        tokenOutAddress,
-        amountInWei,
-        params.minAmountOut,
-        params.eip712Authorization,
-      ],
-      account: signerAccount,
-      value: params.tokenIn === 'ETH' ? amountInWei : BigInt(0),
+      functionName: 'submitTradeIntent',
+      args: [params.intent, params.signature],
+      account: operatorAccount,
       gas: BigInt(350_000),
     }),
   );
 
-  logger.info({ contract: 'RiskRouter', txHash }, 'executeSwap submitted');
+  logger.info({ contract: 'RiskRouter', txHash }, 'submitTradeIntent submitted');
 
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
@@ -64,10 +60,10 @@ export async function routeSwap(params: SwapParams): Promise<SwapResult> {
   });
 
   if (receipt.status !== 'success') {
-    throw new Error(`RiskRouter.executeSwap() reverted. tx: ${txHash}`);
+    throw new Error(`RiskRouter.submitTradeIntent() reverted. tx: ${txHash}`);
   }
 
-  logger.info({ contract: 'RiskRouter', txHash }, 'executeSwap confirmed');
+  logger.info({ contract: 'RiskRouter', txHash }, 'submitTradeIntent confirmed');
 
   return { txHash };
 }
