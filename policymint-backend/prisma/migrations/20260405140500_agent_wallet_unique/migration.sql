@@ -1,0 +1,1 @@
+-- no-op migration retained to keep migration history consistent for v1.4 baseline

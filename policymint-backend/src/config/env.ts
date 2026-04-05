@@ -23,14 +23,17 @@ const EnvSchema = z.object({
   RISK_ROUTER_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
   HACKATHON_VAULT_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
   INTERNAL_SERVICE_KEY: z.preprocess(emptyToUndefined, z.string().min(32).optional()),
-  IDENTITY_REGISTRY_ADDRESS: z.preprocess(emptyToUndefined, z.string().startsWith('0x').optional()),
+  IDENTITY_REGISTRY_ADDRESS: z.preprocess(
+    emptyToUndefined,
+    z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+  ),
   VALIDATION_REGISTRY_ADDRESS: z.preprocess(
     emptyToUndefined,
-    z.string().startsWith('0x').optional(),
+    z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
   ),
   REPUTATION_REGISTRY_ADDRESS: z.preprocess(
     emptyToUndefined,
-    z.string().startsWith('0x').optional(),
+    z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
   ),
   SENTRY_DSN: z.preprocess(emptyToUndefined, z.string().url().optional()),
   KRAKEN_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),

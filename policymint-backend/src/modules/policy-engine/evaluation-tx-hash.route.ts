@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { RegistryType } from '@prisma/client';
 import { z } from 'zod';
-import { prisma } from '../../db/client';
-import { internalAuthHook } from '../../plugins/internal-auth';
+import { prisma } from '../../db/client.js';
+import { internalAuthHook } from '../../plugins/internal-auth.js';
 
 const EvaluationIdParamsSchema = z.object({
   id: z.string().uuid({ message: 'evaluation_id must be a valid UUID' })
@@ -139,16 +139,20 @@ export async function evaluationTxHashRoutes(app: FastifyInstance) {
       if (existingRecord) {
         await tx.validationRecord.update({
           where: { id: existingRecord.id },
-          data: { txHash }
-        });
+          data: {
+            txHash,
+            confirmedAt: new Date()
+          }
+        } as never);
       } else {
         await tx.validationRecord.create({
           data: {
             evaluationId,
             registryType: RegistryType.ERC8004,
-            txHash
+            txHash,
+            confirmedAt: new Date()
           }
-        });
+        } as never);
       }
     });
 

@@ -1,11 +1,11 @@
 import { ActionType, EvaluationResult, PolicyType, Prisma } from '@prisma/client';
-import { prisma } from '../../db/client';
-import { generateId } from '../../lib/uuid';
-import type { EvaluateIntentInput } from './evaluate.schema';
-import { signEvaluatedIntent } from './eip712.service';
-import { evaluateDailyLossBudget } from './evaluators/daily-loss-budget';
-import { evaluateSpendCapPerTx } from './evaluators/spend-cap-per-tx';
-import { evaluateVenueAllowlist, type EvaluatorResult } from './evaluators/venue-allowlist';
+import { prisma } from '../../db/client.js';
+import { generateId } from '../../lib/uuid.js';
+import type { EvaluateIntentInput } from './evaluate.schema.js';
+import { signEvaluatedIntent } from './eip712.service.js';
+import { evaluateDailyLossBudget } from './evaluators/daily-loss-budget.js';
+import { evaluateSpendCapPerTx } from './evaluators/spend-cap-per-tx.js';
+import { evaluateVenueAllowlist, type EvaluatorResult } from './evaluators/venue-allowlist.js';
 
 interface EvaluateIntentResponse {
   result: 'allow' | 'block';

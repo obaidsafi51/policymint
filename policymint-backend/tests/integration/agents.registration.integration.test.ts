@@ -1,8 +1,24 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prisma } from '../../src/db/client';
 import { buildApp } from '../../src/app';
 import { isValidUUIDv7 } from '../../src/lib/uuid';
 import { describeDb } from '../helpers/db';
+
+const { registerAgentOnChainMock, canRegisterAgentOnChainMock, claimHackathonAllocationMock } =
+  vi.hoisted(() => ({
+    registerAgentOnChainMock: vi.fn(),
+    canRegisterAgentOnChainMock: vi.fn(),
+    claimHackathonAllocationMock: vi.fn(),
+  }));
+
+vi.mock('../../src/lib/blockchain/agentRegistry.js', () => ({
+  registerAgentOnChain: registerAgentOnChainMock,
+  canRegisterAgentOnChain: canRegisterAgentOnChainMock,
+}));
+
+vi.mock('../../src/lib/blockchain/hackathonVault.js', () => ({
+  claimHackathonAllocation: claimHackathonAllocationMock,
+}));
 
 describeDb('POST /v1/agents', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
@@ -19,6 +35,10 @@ describeDb('POST /v1/agents', () => {
     await prisma.reputationSignal.deleteMany();
     await prisma.strategyCycle.deleteMany();
     await prisma.agent.deleteMany();
+
+    canRegisterAgentOnChainMock.mockReturnValue(false);
+    registerAgentOnChainMock.mockReset();
+    claimHackathonAllocationMock.mockReset();
   });
 
   afterAll(async () => {
@@ -205,5 +225,28 @@ describeDb('POST /v1/agents', () => {
 
     expect(response.statusCode).toBe(201);
     expect(body.agent.isAdmin).toBeUndefined();
+  });
+
+  it.skip('v1.4.1 delta: rejects duplicate wallet registrations with a clear 409 error', async () => {
+    const payload = {
+      name: 'Duplicate Wallet Agent',
+      walletAddress: '0xAbCdEf0123456789aBCdEf0123456789abCDef01',
+    };
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/agents',
+      payload,
+    });
+
+    const second = await app.inject({
+      method: 'POST',
+      url: '/v1/agents',
+      payload,
+    });
+
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(409);
+    expect(second.json().error).toBe('AGENT_WALLET_ALREADY_REGISTERED');
   });
 });

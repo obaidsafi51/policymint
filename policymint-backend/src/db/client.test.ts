@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { prisma } from './client';
+import { prisma } from './client.js';
 
 const describeDb = process.env.RUN_DB_TESTS === 'true' ? describe : describe.skip;
 

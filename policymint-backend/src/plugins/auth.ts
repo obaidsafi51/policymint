@@ -1,6 +1,6 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
-import { prisma } from '../db/client';
-import { verifyApiKey } from '../lib/crypto';
+import { prisma } from '../db/client.js';
+import { verifyApiKey } from '../lib/crypto.js';
 
 const API_KEY_PREFIX = 'pm_live_';
 const PREFIX_LOOKUP_LENGTH = API_KEY_PREFIX.length + 8;

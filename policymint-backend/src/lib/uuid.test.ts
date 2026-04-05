@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateId, isValidUUIDv7 } from './uuid';
+import { generateId, isValidUUIDv7 } from './uuid.js';
 
 describe('uuid utility', () => {
   it('generates valid UUID v7 IDs', () => {

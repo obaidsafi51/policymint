@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { CreatePolicySchema } from './policy.schema';
-import { createPolicy, listPoliciesByAgent } from './policy.service';
+import { CreatePolicySchema } from './policy.schema.js';
+import { createPolicy, listPoliciesByAgent } from './policy.service.js';
 
 const AgentIdSchema = z.object({
   agentId: z.string().uuid()

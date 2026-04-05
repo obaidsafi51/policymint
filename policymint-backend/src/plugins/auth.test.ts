@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { apiKeyAuth } from './auth';
+import { apiKeyAuth } from './auth.js';
 
 const { findFirstMock, verifyApiKeyMock } = vi.hoisted(() => ({
   findFirstMock: vi.fn(),

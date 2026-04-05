@@ -1,5 +1,5 @@
-import { prisma } from '../../db/client';
-import type { CreatePolicyInput } from './policy.schema';
+import { prisma } from '../../db/client.js';
+import type { CreatePolicyInput } from './policy.schema.js';
 
 export async function createPolicy(input: CreatePolicyInput) {
   return prisma.policy.create({
