@@ -36,6 +36,12 @@ const TOKEN_TO_KRAKEN_PAIR: Record<string, string> = {
   DAI: 'DAIUSD',
 };
 
+const PRICE_CACHE_TTL_MS = 30_000;
+const KRAKEN_FETCH_TIMEOUT_MS = 3_000;
+const MAX_SLIPPAGE_BPS = 200;
+const MAX_SAFE_INTEGER_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
+const priceCache = new Map<string, { price: number; expiresAt: number }>();
+
 function normalizeSymbol(symbol: string): string {
   return symbol.trim().toUpperCase();
 }
@@ -55,9 +61,18 @@ function mapAction(intent: EvaluateIntentInput): string {
 }
 
 function toUnitAmount(amountRaw: string, decimals: number): number {
+  if (!Number.isInteger(decimals) || decimals < 0) {
+    throw new Error(`Invalid token decimals: ${decimals}`);
+  }
+
   const amount = BigInt(amountRaw);
   const divisor = BigInt(10) ** BigInt(decimals);
   const integerPart = amount / divisor;
+
+  if (integerPart > MAX_SAFE_INTEGER_BIGINT || integerPart < -MAX_SAFE_INTEGER_BIGINT) {
+    throw new Error('Amount exceeds safe integer range');
+  }
+
   const fractionPart = amount % divisor;
   const fractionAsNumber = Number(fractionPart) / Number(divisor);
 
@@ -70,9 +85,29 @@ async function getKrakenUsdPrice(tokenSymbol: string): Promise<number> {
   }
 
   const normalized = normalizeSymbol(tokenSymbol);
+  const now = Date.now();
+  const cached = priceCache.get(normalized);
+  if (cached && cached.expiresAt > now) {
+    return cached.price;
+  }
+
   const pair = TOKEN_TO_KRAKEN_PAIR[normalized] ?? `${normalized}USD`;
   const url = `https://api.kraken.com/0/public/Ticker?pair=${encodeURIComponent(pair)}`;
-  const response = await fetch(url);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), KRAKEN_FETCH_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Kraken ticker request timed out after ${KRAKEN_FETCH_TIMEOUT_MS}ms`);
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     throw new Error(`Kraken ticker request failed with status ${response.status}`);
@@ -98,6 +133,11 @@ async function getKrakenUsdPrice(tokenSymbol: string): Promise<number> {
   if (!Number.isFinite(price) || price <= 0) {
     throw new Error(`Invalid Kraken price for ${pair}: ${lastTraded}`);
   }
+
+  priceCache.set(normalized, {
+    price,
+    expiresAt: now + PRICE_CACHE_TTL_MS,
+  });
 
   return price;
 }
@@ -125,6 +165,10 @@ export async function mapToRiskRouterIntent(input: {
   const maxSlippageBps = Number.isFinite(maxSlippageBpsFromParams)
     ? Math.max(1, Math.floor(maxSlippageBpsFromParams))
     : input.defaultMaxSlippageBps ?? 50;
+
+  if (maxSlippageBps > MAX_SLIPPAGE_BPS) {
+    throw new Error(`maxSlippageBps exceeds backend ceiling (${MAX_SLIPPAGE_BPS})`);
+  }
 
   return {
     agentId: BigInt(input.erc8004TokenId),

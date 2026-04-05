@@ -22,6 +22,25 @@ const PREFIX_LOOKUP_LENGTH = API_KEY_PREFIX.length + 8;
 const RATE_LIMIT_TIME_WINDOW = env.NODE_ENV === 'test' ? '1 minute' : '1 second';
 type FeedbackTypeValue = (typeof FeedbackType)[keyof typeof FeedbackType];
 type ExecutionState = 'confirmed' | 'unconfirmed' | 'not-applicable';
+type ExecutionErrorTag = 'execution_reverted' | 'execution_timeout' | 'rpc_error' | 'signing_error';
+
+function classifyExecutionError(error: unknown): ExecutionErrorTag {
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+
+  if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) {
+    return 'execution_timeout';
+  }
+
+  if (message.includes('sign') || message.includes('signature')) {
+    return 'signing_error';
+  }
+
+  if (message.includes('rpc') || message.includes('http') || message.includes('network')) {
+    return 'rpc_error';
+  }
+
+  return 'execution_reverted';
+}
 
 function resolveAttestationScore(input: {
   result: 'allow' | 'block';
@@ -211,10 +230,11 @@ export async function evaluateRoutes(app: FastifyInstance) {
               });
 
               executionState = 'confirmed';
-              executionNote = ` Execution tx: ${execution.txHash}`;
+              executionNote = ' execution_confirmed';
             } catch (executionError) {
               executionState = 'unconfirmed';
-              executionNote = ` Execution unconfirmed/reverted: ${executionError instanceof Error ? executionError.message : 'unknown error'}`;
+              executionNote = ` ${classifyExecutionError(executionError)}`;
+              app.log.error({ err: executionError, evaluation_id: response.evaluation_id }, 'RiskRouter execution failed');
             }
           }
 
@@ -228,7 +248,7 @@ export async function evaluateRoutes(app: FastifyInstance) {
             }),
             notes:
               response.result === 'allow'
-                ? `Policy evaluation allow; ${executionState === 'confirmed' ? 'execution confirmed on-chain' : 'execution pending/unconfirmed'}.${executionNote}`
+                ? `Policy evaluation allow; ${executionState === 'confirmed' ? 'execution confirmed on-chain' : 'execution pending/unconfirmed'};${executionNote}`
                 : `Policy block: ${response.reason ?? 'blocked by policy'}`,
             checkpointData: {
               action_type: body.data.action_type,

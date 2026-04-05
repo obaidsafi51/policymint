@@ -6,6 +6,8 @@ import { operatorAccount, operatorWalletClient, publicClient } from './client.js
 import { txQueue } from './txQueue.js';
 
 const VALIDATION_REGISTRY = env.VALIDATION_REGISTRY_ADDRESS as `0x${string}` | undefined;
+const MAX_ATTESTATION_SCORE = 100;
+const MAX_NOTES_LENGTH = 128;
 
 export interface PostValidationParams {
   agentId: bigint;
@@ -46,6 +48,12 @@ export async function postValidationRecord(
     throw new Error('VALIDATION_REGISTRY_ADDRESS missing; validation emission is disabled');
   }
 
+  if (!Number.isInteger(params.score) || params.score < 0 || params.score > MAX_ATTESTATION_SCORE) {
+    throw new Error(`Invalid attestation score: ${params.score}`);
+  }
+
+  const sanitizedNotes = params.notes.slice(0, MAX_NOTES_LENGTH);
+
   const checkpointHash = buildCheckpointHash(params.checkpointData);
 
   logger.info(
@@ -63,7 +71,7 @@ export async function postValidationRecord(
       address: VALIDATION_REGISTRY,
       abi: VALIDATION_REGISTRY_ABI,
       functionName: 'postEIP712Attestation',
-      args: [params.agentId, checkpointHash, params.score, params.notes],
+      args: [params.agentId, checkpointHash, params.score, sanitizedNotes],
       account: operatorAccount,
       gas: BigInt(200_000),
     }),
