@@ -3,6 +3,7 @@ import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 
 const CLI_TIMEOUT_MS = 15_000;
+const CLI_FORCE_KILL_DELAY_MS = 3_000;
 
 export interface KrakenCliResult {
   success: boolean;
@@ -83,6 +84,7 @@ export class KrakenAdapter {
       let stderr = '';
       let timedOut = false;
       let settled = false;
+      let forceKillTimer: NodeJS.Timeout | null = null;
 
       const finalize = (result: KrakenCliResult) => {
         if (settled) {
@@ -99,7 +101,6 @@ export class KrakenAdapter {
         child = spawn(this.getKrakenCliPath(), commandArgs, {
           env: process.env,
           stdio: ['ignore', 'pipe', 'pipe'],
-          timeout: CLI_TIMEOUT_MS,
         });
       } catch (error) {
         finalize({
@@ -114,6 +115,24 @@ export class KrakenAdapter {
 
       this.activeProcesses.add(child);
 
+      const clearTimers = () => {
+        clearTimeout(timeoutHandle);
+        if (forceKillTimer) {
+          clearTimeout(forceKillTimer);
+          forceKillTimer = null;
+        }
+      };
+
+      const forceResolveTimeout = () => {
+        finalize({
+          success: false,
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+          exitCode: null,
+          timedOut: true,
+        });
+      };
+
       const timeoutHandle = setTimeout(() => {
         timedOut = true;
         try {
@@ -121,6 +140,21 @@ export class KrakenAdapter {
         } catch (error) {
           stderr = `${stderr}${stderr ? '\n' : ''}${String(error)}`;
         }
+
+        forceKillTimer = setTimeout(() => {
+          if (settled) {
+            return;
+          }
+
+          try {
+            child.kill('SIGKILL');
+          } catch (error) {
+            stderr = `${stderr}${stderr ? '\n' : ''}${String(error)}`;
+          }
+
+          this.activeProcesses.delete(child);
+          forceResolveTimeout();
+        }, CLI_FORCE_KILL_DELAY_MS);
       }, CLI_TIMEOUT_MS);
 
       child.stdout?.on('data', (chunk: Buffer | string) => {
@@ -132,7 +166,7 @@ export class KrakenAdapter {
       });
 
       child.on('error', (error) => {
-        clearTimeout(timeoutHandle);
+        clearTimers();
         this.activeProcesses.delete(child);
         finalize({
           success: false,
@@ -144,7 +178,7 @@ export class KrakenAdapter {
       });
 
       child.on('close', (code) => {
-        clearTimeout(timeoutHandle);
+        clearTimers();
         this.activeProcesses.delete(child);
 
         const exitCode = typeof code === 'number' ? code : null;

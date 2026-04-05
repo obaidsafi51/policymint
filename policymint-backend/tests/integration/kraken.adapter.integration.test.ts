@@ -43,7 +43,10 @@ describe('KrakenAdapter', () => {
     expect(spawnMock).toHaveBeenCalledWith(
       'kraken',
       ['paper', 'buy', 'BTCUSD', '0.001234'],
-      expect.objectContaining({ timeout: 15000 }),
+      expect.objectContaining({
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }),
     );
   });
 

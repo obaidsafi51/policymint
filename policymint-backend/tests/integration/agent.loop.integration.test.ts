@@ -34,6 +34,8 @@ describe('StrategyLoop', () => {
 
   it('skips evaluate when strategy returns hold', async () => {
     const { loop, strategy, evaluateIntentFn } = createLoopHarness();
+    await loop.start();
+
     strategy.onPrice.mockReturnValue({
       action: 'hold',
       pair: 'BTC/USD',
@@ -48,6 +50,8 @@ describe('StrategyLoop', () => {
 
   it('skips evaluate when buy volume is below Kraken minimum', async () => {
     const { loop, strategy, evaluateIntentFn } = createLoopHarness();
+    await loop.start();
+
     strategy.onPrice.mockReturnValue({
       action: 'buy',
       pair: 'BTC/USD',
@@ -62,6 +66,7 @@ describe('StrategyLoop', () => {
 
   it('calls evaluate then paperBuy when result is allow', async () => {
     const { loop, strategy, evaluateIntentFn, krakenAdapter } = createLoopHarness();
+    await loop.start();
 
     strategy.onPrice.mockReturnValue({
       action: 'buy',
@@ -86,8 +91,38 @@ describe('StrategyLoop', () => {
     expect(krakenAdapter.paperBuy).toHaveBeenCalledWith('BTCUSD', 0.001);
   });
 
+  it('builds intent with side field for sell signals', async () => {
+    const { loop, strategy, evaluateIntentFn } = createLoopHarness();
+    await loop.start();
+
+    strategy.onPrice.mockReturnValue({
+      action: 'sell',
+      pair: 'BTC/USD',
+      amountUsd: 100,
+      reason: 'bearish crossover',
+    });
+
+    evaluateIntentFn.mockResolvedValue({
+      result: 'block',
+      reason: 'blocked for test',
+      policy_id: 'policy-1',
+      evaluation_id: 'eval-side',
+      eip712_signed_intent: '0xabc',
+      riskIntentForExecution: null,
+    });
+
+    await loop.processSignal(100_000);
+
+    expect(evaluateIntentFn).toHaveBeenCalledTimes(1);
+    const intentArg = evaluateIntentFn.mock.calls[0]?.[0];
+    expect(intentArg?.token_in).toBe('BTC');
+    expect(intentArg?.token_out).toBe('USD');
+    expect(intentArg?.params).toMatchObject({ side: 'sell', pair: 'BTC/USD' });
+  });
+
   it('drops concurrent ticks while processing is in-flight', async () => {
     const { loop, strategy, evaluateIntentFn } = createLoopHarness();
+    await loop.start();
 
     strategy.onPrice.mockReturnValue({
       action: 'buy',
@@ -124,6 +159,7 @@ describe('StrategyLoop', () => {
 
   it('continues processing after evaluate service throws', async () => {
     const { loop, strategy, evaluateIntentFn, krakenAdapter } = createLoopHarness();
+    await loop.start();
 
     strategy.onPrice.mockReturnValue({
       action: 'buy',

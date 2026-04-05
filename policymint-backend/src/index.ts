@@ -30,7 +30,11 @@ async function main() {
     });
     app.log.info(`PolicyMint backend running on port ${env.PORT}`);
 
-    await strategyLoop.start();
+    if (env.AGENT_ID) {
+      await strategyLoop.start();
+    } else {
+      app.log.warn('AGENT_ID not set; strategy loop disabled');
+    }
   } catch (err) {
     app.log.error(err);
     await strategyLoop.stop();

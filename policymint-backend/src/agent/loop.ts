@@ -50,6 +50,11 @@ export class StrategyLoop {
       return;
     }
 
+    if (!env.AGENT_ID) {
+      this.logger.warn({ event: 'STRATEGY_LOOP_DISABLED' }, 'AGENT_ID not set; strategy loop disabled');
+      return;
+    }
+
     this.started = true;
 
     const initResult = await this.krakenAdapter.paperInit();
@@ -80,6 +85,10 @@ export class StrategyLoop {
 
   async processSignal(price: number): Promise<void> {
     try {
+      if (!this.started) {
+        return;
+      }
+
       const signal = this.strategy.onPrice(price);
 
       if (signal.action === 'hold') {
@@ -110,6 +119,10 @@ export class StrategyLoop {
           reason: evaluation.reason,
           evaluation_id: evaluation.evaluation_id,
         }, 'Trade blocked by policy engine');
+        return;
+      }
+
+      if (!this.started) {
         return;
       }
 
@@ -152,13 +165,21 @@ export class StrategyLoop {
     signalReason: string;
     btcVolume: number;
   }): EvaluateIntentInput {
+    const agentId = env.AGENT_ID;
+    if (!agentId) {
+      throw new Error('AGENT_ID is not configured');
+    }
+
+    const btcMicro = Math.round(input.btcVolume * 1_000_000);
+    const amountWei = (BigInt(btcMicro) * 1_000_000_000_000n).toString();
+
     return {
-      agent_id: env.AGENT_ID,
+      agent_id: agentId,
       action_type: 'trade',
       venue: 'kraken-spot',
-      amount: String(BigInt(Math.round(input.btcVolume * 1e18))),
-      token_in: input.signalAction === 'buy' ? 'USD' : 'BTC',
-      token_out: input.signalAction === 'buy' ? 'BTC' : 'USD',
+      amount: amountWei,
+      token_in: 'BTC',
+      token_out: 'USD',
       eip712_domain: {
         name: 'PolicyMint',
         version: '1',
@@ -167,7 +188,7 @@ export class StrategyLoop {
       },
       params: {
         pair: 'BTC/USD',
-        action: input.signalAction,
+        side: input.signalAction,
         btc_volume: input.btcVolume,
         signal_reason: input.signalReason,
       },

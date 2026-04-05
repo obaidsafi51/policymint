@@ -3,6 +3,7 @@ import { logger } from '../lib/logger.js';
 const KRAKEN_WS_URL = 'wss://ws.kraken.com/v2';
 const RECONNECT_DELAY_MS = 2_000;
 const INACTIVITY_TIMEOUT_MS = 30_000;
+const CONNECT_TIMEOUT_MS = 10_000;
 
 interface SubscriptionAckMessage {
   method?: string;
@@ -38,6 +39,7 @@ export class KrakenWebSocket {
   private socket: SocketLike | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private inactivityTimer: NodeJS.Timeout | null = null;
+  private connectTimeoutTimer: NodeJS.Timeout | null = null;
   private shouldReconnect = true;
   private connectResolve: (() => void) | null = null;
   private connectReject: ((error: Error) => void) | null = null;
@@ -46,11 +48,20 @@ export class KrakenWebSocket {
 
   connect(): Promise<void> {
     this.shouldReconnect = true;
+    this.clearConnectTimeoutTimer();
 
     return new Promise((resolve, reject) => {
       this.connectResolve = resolve;
       this.connectReject = reject;
       this.openConnection();
+
+      this.connectTimeoutTimer = setTimeout(() => {
+        if (!this.connectReject) {
+          return;
+        }
+
+        this.rejectConnectIfPending(new Error(`WebSocket connection timeout after ${CONNECT_TIMEOUT_MS}ms`));
+      }, CONNECT_TIMEOUT_MS);
     });
   }
 
@@ -58,6 +69,7 @@ export class KrakenWebSocket {
     this.shouldReconnect = false;
     this.clearReconnectTimer();
     this.clearInactivityTimer();
+    this.clearConnectTimeoutTimer();
     this.rejectConnectIfPending(new Error('WebSocket disconnected before subscription ack'));
 
     if (this.socket) {
@@ -244,6 +256,7 @@ export class KrakenWebSocket {
       return;
     }
 
+    this.clearConnectTimeoutTimer();
     this.connectResolve();
     this.connectResolve = null;
     this.connectReject = null;
@@ -254,8 +267,16 @@ export class KrakenWebSocket {
       return;
     }
 
+    this.clearConnectTimeoutTimer();
     this.connectReject(error);
     this.connectResolve = null;
     this.connectReject = null;
+  }
+
+  private clearConnectTimeoutTimer(): void {
+    if (this.connectTimeoutTimer) {
+      clearTimeout(this.connectTimeoutTimer);
+      this.connectTimeoutTimer = null;
+    }
   }
 }
