@@ -47,6 +47,9 @@ const EnvSchema = z.object({
   SENTRY_DSN: z.preprocess(emptyToUndefined, z.string().url().optional()),
   KRAKEN_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
   KRAKEN_API_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
+  KRAKEN_CLI_PATH: z.preprocess(emptyToUndefined, z.string().default('kraken')),
+  STRATEGY_TRADE_AMOUNT_USD: z.coerce.number().positive().max(450).default(100),
+  AGENT_ID: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
