@@ -12,6 +12,18 @@ const AgentIdParamsSchema = z.object({
 
 const AGENT_METADATA_TYPE = 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1';
 
+const agentResponseSelect = {
+  id: true,
+  name: true,
+  walletAddress: true,
+  strategyType: true,
+  chainId: true,
+  erc8004TokenId: true,
+  registrationTxHash: true,
+  vaultClaimedAt: true,
+  createdAt: true,
+};
+
 function toDataUriJson(data: Record<string, unknown>) {
   const payload = Buffer.from(JSON.stringify(data), 'utf8').toString('base64');
   return `data:application/json;base64,${payload}`;
@@ -66,44 +78,31 @@ export async function agentRoutes(app: FastifyInstance) {
             erc8004TokenId: agentId.toString(),
             registrationTxHash: txHash,
           },
-          select: {
-            id: true,
-            name: true,
-            walletAddress: true,
-            strategyType: true,
-            chainId: true,
-            erc8004TokenId: true,
-            registrationTxHash: true,
-            vaultClaimedAt: true,
-            createdAt: true,
-          },
+          select: agentResponseSelect,
         } as never);
 
         if (!agentBeforeClaim?.vaultClaimedAt) {
           try {
             await claimHackathonAllocation(agentId);
 
-            responseAgent = await prisma.agent.update({
-              where: { id: result.agent.id },
-              data: {
-                vaultClaimedAt: new Date(),
-              },
-              select: {
-                id: true,
-                name: true,
-                walletAddress: true,
-                strategyType: true,
-                chainId: true,
-                erc8004TokenId: true,
-                registrationTxHash: true,
-                vaultClaimedAt: true,
-                createdAt: true,
-              },
-            } as never);
+            try {
+              responseAgent = await prisma.agent.update({
+                where: { id: result.agent.id },
+                data: {
+                  vaultClaimedAt: new Date(),
+                },
+                select: agentResponseSelect,
+              } as never);
+            } catch (persistErr) {
+              app.log.error(
+                { err: persistErr, agent_id: result.agent.id, agent_token_id: agentId.toString() },
+                'Vault claim succeeded but persisting vaultClaimedAt failed',
+              );
+            }
           } catch (claimErr) {
             app.log.error(
               { err: claimErr, agent_id: result.agent.id, agent_token_id: agentId.toString() },
-              'Vault claim failed after successful on-chain registration',
+              'Vault claim failed after successful on-chain registration; continuing without vaultClaimedAt',
             );
           }
         }

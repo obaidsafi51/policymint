@@ -18,7 +18,10 @@ export interface RegisterAgentResult {
 }
 
 const AGENT_REGISTRY =
-  (env.IDENTITY_REGISTRY_ADDRESS ?? env.AGENT_REGISTRY_ADDRESS) as `0x${string}` | undefined;
+  (env.IDENTITY_REGISTRY_ADDRESS ??
+    (process.env.AGENT_REGISTRY_ADDRESS as `0x${string}` | undefined)) as
+    | `0x${string}`
+    | undefined;
 
 export function canRegisterAgentOnChain() {
   return Boolean(AGENT_REGISTRY);
@@ -86,10 +89,6 @@ export async function registerAgentOnChain(
   for (const log of registryLogs) {
     if (parsedAgentId > BigInt(0)) {
       break;
-    }
-
-    if (log.address.toLowerCase() !== registryAddress) {
-      continue;
     }
 
     if (log.topics[1]) {

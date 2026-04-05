@@ -132,6 +132,47 @@ describeDb('POST /v1/agents on-chain onboarding', () => {
     expect(claimHackathonAllocationMock).not.toHaveBeenCalled();
   });
 
+  it('still returns 201 and leaves vaultClaimedAt unset when vault claim fails', async () => {
+    claimHackathonAllocationMock.mockRejectedValue(new Error('simulated vault claim failure'));
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/agents',
+      payload: {
+        name: 'Claim Fallback Agent',
+        walletAddress: '0xAbCdEf0123456789aBCdEf0123456789abCDef01',
+        strategyType: 'MOMENTUM',
+      },
+    });
+
+    const body = response.json();
+
+    expect(response.statusCode).toBe(201);
+    expect(body.agent.erc8004TokenId).toBe('42');
+    expect(body.agent.registrationTxHash).toBe(`0x${'a'.repeat(64)}`);
+    expect(body.agent.vaultClaimedAt).toBeNull();
+
+    const saved = (await prisma.agent.findUnique({
+      where: { id: body.agent.id },
+      select: {
+        erc8004TokenId: true,
+        registrationTxHash: true,
+        vaultClaimedAt: true,
+      },
+    } as never)) as {
+      erc8004TokenId: string | null;
+      registrationTxHash: string | null;
+      vaultClaimedAt: Date | null;
+    } | null;
+
+    expect(saved?.erc8004TokenId).toBe('42');
+    expect(saved?.registrationTxHash).toBe(`0x${'a'.repeat(64)}`);
+    expect(saved?.vaultClaimedAt).toBeNull();
+
+    expect(registerAgentOnChainMock).toHaveBeenCalledTimes(1);
+    expect(claimHackathonAllocationMock).toHaveBeenCalledWith(BigInt(42));
+  });
+
   it.skip('v1.4.1 delta: rejects duplicate wallet and does not invoke a second on-chain registration', async () => {
     const payload = {
       name: 'Duplicate Onchain Agent',
