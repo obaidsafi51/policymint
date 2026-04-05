@@ -13,7 +13,7 @@ model Agent {
   name               String
   walletAddress      String             @map("wallet_address")
   metadataUri        String?            @map("metadata_uri")
-  chainId            Int                @default(84532) @map("chain_id")
+  chainId            Int                @default(11155111) @map("chain_id")
   strategyType       StrategyType       @default(MOMENTUM) @map("strategy_type")
   erc8004TokenId     String?            @map("erc8004_token_id")
   apiKeyHash         String             @map("api_key_hash")

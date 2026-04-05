@@ -11,12 +11,12 @@ const { registerAgentOnChainMock, canRegisterAgentOnChainMock, claimHackathonAll
     claimHackathonAllocationMock: vi.fn(),
   }));
 
-vi.mock('../../src/lib/blockchain/agentRegistry', () => ({
+vi.mock('../../src/lib/blockchain/agentRegistry.js', () => ({
   registerAgentOnChain: registerAgentOnChainMock,
   canRegisterAgentOnChain: canRegisterAgentOnChainMock,
 }));
 
-vi.mock('../../src/lib/blockchain/hackathonVault', () => ({
+vi.mock('../../src/lib/blockchain/hackathonVault.js', () => ({
   claimHackathonAllocation: claimHackathonAllocationMock,
 }));
 

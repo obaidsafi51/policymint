@@ -1,10 +1,10 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { prisma } from '../../db/client';
-import { canRegisterAgentOnChain, registerAgentOnChain } from '../../lib/blockchain/agentRegistry';
-import { claimHackathonAllocation } from '../../lib/blockchain/hackathonVault';
-import { RegisterAgentSchema } from './agent.schema';
-import { registerAgent, getAgentById } from './agent.service';
+import { prisma } from '../../db/client.js';
+import { canRegisterAgentOnChain, registerAgentOnChain } from '../../lib/blockchain/agentRegistry.js';
+import { claimHackathonAllocation } from '../../lib/blockchain/hackathonVault.js';
+import { RegisterAgentSchema } from './agent.schema.js';
+import { registerAgent, getAgentById } from './agent.service.js';
 
 const AgentIdParamsSchema = z.object({
   id: z.string().uuid()

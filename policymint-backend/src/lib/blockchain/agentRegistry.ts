@@ -62,12 +62,19 @@ export async function registerAgentOnChain(
   logger.info({ contract: 'AgentRegistry', txHash }, 'registerAgent transaction confirmed');
 
   let parsedAgentId = BigInt(0);
+  const registryAddress = AGENT_REGISTRY.toLowerCase();
 
   for (const log of receipt.logs) {
+    if (log.address.toLowerCase() !== registryAddress) {
+      continue;
+    }
+
     if (log.topics[1]) {
       try {
         parsedAgentId = BigInt(log.topics[1]);
-        break;
+        if (parsedAgentId > BigInt(0)) {
+          break;
+        }
       } catch {
         continue;
       }

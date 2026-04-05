@@ -19,7 +19,6 @@ export interface SwapParams {
 }
 
 export interface SwapResult {
-  amountOut: bigint;
   txHash: `0x${string}`;
 }
 
@@ -70,6 +69,5 @@ export async function routeSwap(params: SwapParams): Promise<SwapResult> {
 
   logger.info({ contract: 'RiskRouter', txHash }, 'executeSwap confirmed');
 
-  const amountOut = BigInt(receipt.logs[receipt.logs.length - 1]?.data ?? '0x0');
-  return { amountOut, txHash };
+  return { txHash };
 }
