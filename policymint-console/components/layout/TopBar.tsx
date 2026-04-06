@@ -12,7 +12,11 @@ export function TopBar({ title }: TopBarProps) {
   const { isConnected } = useAccount();
   const chainId = useChainId();
 
-  const pageLabel = title === 'simulate' ? 'Simulation' : 'Dashboard Overview';
+  const pageLabel = title === 'simulate'
+    ? 'Simulation'
+    : title === 'agents'
+      ? 'Agent Registration'
+      : 'Dashboard Overview';
 
   const networkLabel = isConnected
     ? chainId === 84532

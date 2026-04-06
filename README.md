@@ -1,5 +1,9 @@
 # Policy Mint
 
+## Hackathon decision log
+
+- Backend decision and P1 backlog spec for deferred policy update route: [policymint-backend/docs/hackathon-decision-log-2026-04-05.md](policymint-backend/docs/hackathon-decision-log-2026-04-05.md)
+
 ## Backend tx-hash write-back
 
 `PATCH /v1/evaluations/:id/tx-hash` closes the on-chain loop after the blockchain service emits to `ValidationRegistry` and receives a confirmed tx hash.
