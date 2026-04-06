@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useAccount, useChainId } from 'wagmi';
 import { Bot } from 'lucide-react';
 import { AgentRegistrationForm, type AgentRegistrationFormValues } from '@/components/agents/AgentRegistrationForm';
@@ -14,6 +14,7 @@ export default function RegisterAgentPage() {
   const { address: connectedAddress } = useAccount();
   const chainId = useChainId();
   const { address: sessionAddress } = useAuth();
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const {
     phase,
     steps,
@@ -29,8 +30,11 @@ export default function RegisterAgentPage() {
 
   async function submit(values: AgentRegistrationFormValues) {
     if (!walletAddress) {
+      setSubmitError('Connect and sign in with your wallet to register an agent.');
       return;
     }
+
+    setSubmitError(null);
 
     await register({
       ...values,
@@ -47,6 +51,8 @@ export default function RegisterAgentPage() {
         <AgentRegistrationForm
           walletAddress={walletAddress || 'Connect + sign in wallet to continue'}
           isSubmitting={isRegistering}
+          isSubmitDisabled={!walletAddress}
+          submitError={submitError ?? undefined}
           onSubmit={submit}
         />
 
@@ -57,12 +63,14 @@ export default function RegisterAgentPage() {
               agentId={result.agentId}
               apiKey={result.apiKey}
               txHashes={result.txHashes}
+              chainId={chainId}
             />
           ) : null}
 
           {phase === 'REGISTERING' || phase === 'ERROR' ? (
             <RegistrationProgress
               steps={steps}
+              chainId={chainId}
               failedStep={errorState?.failedStep}
               errorMessage={errorState?.errorMessage}
               onRetry={errorState ? () => void retry() : undefined}

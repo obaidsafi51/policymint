@@ -1,6 +1,7 @@
 'use client';
 
 import { Check, ExternalLink, X } from 'lucide-react';
+import { txExplorerLink } from '@/lib/explorer';
 import { formatAddress } from '@/lib/formatAddress';
 
 export type RegistrationStepStatus = 'pending' | 'active' | 'done' | 'failed';
@@ -15,6 +16,7 @@ export interface RegistrationStepItem {
 
 interface RegistrationStepProps {
   step: RegistrationStepItem;
+  chainId?: number;
 }
 
 function stepDot(status: RegistrationStepStatus) {
@@ -43,11 +45,7 @@ function stepDot(status: RegistrationStepStatus) {
   return <span className="inline-flex h-[14px] w-[14px] rounded-[3px] bg-[var(--bg-surface)]" />;
 }
 
-function txLink(txHash: string) {
-  return `https://sepolia.etherscan.io/tx/${txHash}`;
-}
-
-export function RegistrationStep({ step }: RegistrationStepProps) {
+export function RegistrationStep({ step, chainId }: RegistrationStepProps) {
   return (
     <li className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2">
       <div className="flex items-start gap-2">
@@ -57,7 +55,7 @@ export function RegistrationStep({ step }: RegistrationStepProps) {
           {step.message ? <p className="mt-1 text-xs text-[var(--text-secondary)]">{step.message}</p> : null}
           {step.txHash ? (
             <a
-              href={txLink(step.txHash)}
+              href={txExplorerLink(step.txHash, chainId)}
               target="_blank"
               rel="noreferrer"
               className="mt-1 inline-flex items-center gap-1 font-mono text-xs text-[var(--text-info)] hover:underline"

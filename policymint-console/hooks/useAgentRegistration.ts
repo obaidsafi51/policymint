@@ -209,6 +209,10 @@ export function useAgentRegistration() {
       try {
         const parsed = JSON.parse(evt.data) as RegistrationEvent;
 
+        if (parsed.txHash && !txHashesRef.current.includes(parsed.txHash)) {
+          txHashesRef.current = [...txHashesRef.current, parsed.txHash];
+        }
+
         if (parsed.registrationId) {
           setRegistrationId(parsed.registrationId);
         }
@@ -241,6 +245,7 @@ export function useAgentRegistration() {
 
   const register = useCallback(async (payload: RegisterPayload) => {
     closeEventSource();
+    txHashesRef.current = [];
     setLastPayload(payload);
     setPhase('REGISTERING');
     setErrorState(null);

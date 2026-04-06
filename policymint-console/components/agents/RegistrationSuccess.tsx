@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { CheckCircle2, Copy, ExternalLink, Eye, EyeOff, TriangleAlert } from 'lucide-react';
+import { txExplorerLink } from '@/lib/explorer';
 import { formatAddress } from '@/lib/formatAddress';
 
 interface RegistrationSuccessProps {
@@ -10,13 +11,10 @@ interface RegistrationSuccessProps {
   agentId: string;
   apiKey: string;
   txHashes?: string[];
+  chainId?: number;
 }
 
-function txLink(txHash: string) {
-  return `https://sepolia.etherscan.io/tx/${txHash}`;
-}
-
-export function RegistrationSuccess({ registrationId, agentId, apiKey, txHashes = [] }: RegistrationSuccessProps) {
+export function RegistrationSuccess({ registrationId, agentId, apiKey, txHashes = [], chainId }: RegistrationSuccessProps) {
   const [showApiKey, setShowApiKey] = useState(false);
 
   async function copyText(value: string) {
@@ -37,7 +35,7 @@ export function RegistrationSuccess({ registrationId, agentId, apiKey, txHashes 
 
       <div className="mt-5 space-y-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] p-3">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs uppercase tracking-[0.12em] text-[var(--text-tertiary)]">Agent UUID</span>
+          <span className="text-xs uppercase tracking-[0.12em] text-[var(--text-tertiary)]">Agent ID</span>
           <button
             type="button"
             onClick={() => copyText(agentId)}
@@ -92,7 +90,7 @@ export function RegistrationSuccess({ registrationId, agentId, apiKey, txHashes 
             {txHashes.map((txHash) => (
               <a
                 key={txHash}
-                href={txLink(txHash)}
+                href={txExplorerLink(txHash, chainId)}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 font-mono text-xs text-[var(--text-info)] hover:underline"

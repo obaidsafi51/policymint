@@ -17,6 +17,8 @@ export type AgentRegistrationFormValues = z.infer<typeof registrationSchema>;
 interface AgentRegistrationFormProps {
   walletAddress: string;
   isSubmitting: boolean;
+  isSubmitDisabled?: boolean;
+  submitError?: string;
   initialValues?: Partial<AgentRegistrationFormValues>;
   onSubmit: (values: AgentRegistrationFormValues) => Promise<void>;
 }
@@ -24,6 +26,8 @@ interface AgentRegistrationFormProps {
 export function AgentRegistrationForm({
   walletAddress,
   isSubmitting,
+  isSubmitDisabled,
+  submitError,
   initialValues,
   onSubmit,
 }: AgentRegistrationFormProps) {
@@ -85,6 +89,7 @@ export function AgentRegistrationForm({
           value={walletAddress}
           className="mt-1 h-8 w-full rounded-md border border-[var(--border-default)] bg-[var(--bg-card)] px-3 font-mono text-xs text-[var(--text-secondary)]"
         />
+        {submitError ? <span className="mt-1 block text-[11px] text-[var(--text-danger)]">{submitError}</span> : null}
       </label>
 
       <div className="space-y-2">
@@ -127,7 +132,7 @@ export function AgentRegistrationForm({
 
       <button
         type="submit"
-        disabled={isSubmitting}
+        disabled={isSubmitting || isSubmitDisabled}
         className="focus-ring inline-flex h-9 w-full items-center justify-center rounded-lg bg-[var(--text-brand)] px-4 text-sm font-extrabold uppercase tracking-[0.12em] text-[var(--text-on-brand)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
       >
         Initialize Smart Agent

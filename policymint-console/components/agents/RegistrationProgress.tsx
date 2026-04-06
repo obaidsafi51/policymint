@@ -4,6 +4,7 @@ import { RegistrationStep, RegistrationStepItem } from '@/components/agents/Regi
 
 interface RegistrationProgressProps {
   steps: RegistrationStepItem[];
+  chainId?: number;
   errorMessage?: string;
   failedStep?: string;
   onRetry?: () => void;
@@ -11,6 +12,7 @@ interface RegistrationProgressProps {
 
 export function RegistrationProgress({
   steps,
+  chainId,
   errorMessage,
   failedStep,
   onRetry,
@@ -22,7 +24,7 @@ export function RegistrationProgress({
 
       <ul className="mt-5 space-y-2">
         {steps.map((step) => (
-          <RegistrationStep key={step.stepNumber} step={step} />
+          <RegistrationStep key={step.stepNumber} step={step} chainId={chainId} />
         ))}
       </ul>
 
