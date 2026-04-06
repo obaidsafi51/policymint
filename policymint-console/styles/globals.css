@@ -1,0 +1,183 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-page: #07110F;
+  --bg-card: #0D1513;
+  --bg-surface: #151D1B;
+  --bg-elevated: #1B2723;
+  --bg-brand: #0E3027;
+  --bg-success: #0E3027;
+  --bg-danger: #35151F;
+  --bg-warning: #34290E;
+  --bg-info: #122235;
+
+  --text-primary: #EAF3EF;
+  --text-secondary: #9CB6AD;
+  --text-tertiary: #5B7A6F;
+  --text-brand: #4EDE93;
+  --text-success: #4EDE93;
+  --text-danger: #FF7A8A;
+  --text-warning: #F2C76F;
+  --text-info: #72B3FF;
+  --text-on-brand: #03291D;
+
+  --border-default: #22332D;
+  --border-hover: #335247;
+  --border-focus: #4EDE93;
+  --border-success: #236749;
+  --border-danger: #6E2737;
+
+  --font-sans: Inter, system-ui, sans-serif;
+  --font-headline: Manrope, Inter, system-ui, sans-serif;
+  --font-mono: JetBrains Mono, monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-base: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+}
+
+[data-theme='dark'] {
+  --bg-page: #07110F;
+  --bg-card: #0D1513;
+  --bg-surface: #151D1B;
+  --bg-elevated: #1B2723;
+  --bg-brand: #0E3027;
+  --bg-success: #0E3027;
+  --bg-danger: #35151F;
+  --bg-warning: #34290E;
+  --bg-info: #122235;
+
+  --text-primary: #EAF3EF;
+  --text-secondary: #9CB6AD;
+  --text-tertiary: #5B7A6F;
+  --text-brand: #4EDE93;
+  --text-success: #4EDE93;
+  --text-danger: #FF7A8A;
+  --text-warning: #F2C76F;
+  --text-info: #72B3FF;
+  --text-on-brand: #03291D;
+
+  --border-default: #22332D;
+  --border-hover: #335247;
+  --border-focus: #4EDE93;
+  --border-success: #236749;
+  --border-danger: #6E2737;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-brand) 60%, #2a3b35) color-mix(in srgb, var(--bg-surface) 80%, transparent);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--bg-surface) 85%, transparent);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--text-brand) 75%, #23483a) 0%, color-mix(in srgb, var(--text-brand) 55%, #1d3f33) 100%);
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-default) 90%, transparent);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--text-brand) 88%, #285a46) 0%, color-mix(in srgb, var(--text-brand) 70%, #214a3b) 100%);
+}
+
+.pm-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-brand) 62%, #2a3b35) color-mix(in srgb, var(--bg-surface) 80%, transparent);
+}
+
+.pm-scrollbar::-webkit-scrollbar {
+  width: 7px;
+}
+
+.pm-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pm-scrollbar::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-brand) 68%, #203d32);
+  border-radius: 999px;
+}
+
+.font-headline {
+  font-family: var(--font-headline);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.restricted {
+  opacity: 0.4;
+  filter: grayscale(1);
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+.focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--border-focus);
+}
+
+.shimmer {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--bg-surface);
+}
+
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--bg-card) 45%, transparent) 50%,
+    transparent 100%
+  );
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+}
