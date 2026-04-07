@@ -3,11 +3,25 @@ import { generateId } from '../../lib/uuid.js';
 import { generateApiKey } from '../../lib/crypto.js';
 import type { RegisterAgentInput } from './agent.schema.js';
 
-export async function registerAgent(input: RegisterAgentInput) {
-  const id = generateId();
-  const { raw, hash, prefix } = await generateApiKey();
+const baseAgentSelect = {
+  id: true,
+  name: true,
+  walletAddress: true,
+  strategyType: true,
+  chainId: true,
+  erc8004TokenId: true,
+  registrationTxHash: true,
+  vaultClaimedAt: true,
+  createdAt: true,
+};
 
-  const agent = await prisma.agent.create({
+interface PersistedApiKey {
+  hash: string;
+  prefix: string;
+}
+
+export async function createAgentRecord(input: RegisterAgentInput, apiKey: PersistedApiKey, id = generateId()) {
+  return prisma.agent.create({
     data: {
       id,
       name: input.name,
@@ -15,21 +29,27 @@ export async function registerAgent(input: RegisterAgentInput) {
       strategyType: input.strategyType,
       chainId: input.chainId,
       metadataUri: input.metadataUri ?? null,
-      apiKeyHash: hash,
-      apiKeyPrefix: prefix
+      apiKeyHash: apiKey.hash,
+      apiKeyPrefix: apiKey.prefix,
     },
-    select: {
-      id: true,
-      name: true,
-      walletAddress: true,
-      strategyType: true,
-      chainId: true,
-      erc8004TokenId: true,
-      registrationTxHash: true,
-      vaultClaimedAt: true,
-      createdAt: true
-    } as never
+    select: baseAgentSelect as never,
   } as never);
+}
+
+export async function updateAgentApiKey(agentId: string, apiKey: PersistedApiKey) {
+  return prisma.agent.update({
+    where: { id: agentId },
+    data: {
+      apiKeyHash: apiKey.hash,
+      apiKeyPrefix: apiKey.prefix,
+    },
+    select: baseAgentSelect as never,
+  } as never);
+}
+
+export async function registerAgent(input: RegisterAgentInput) {
+  const { raw, hash, prefix } = await generateApiKey();
+  const agent = await createAgentRecord(input, { hash, prefix });
 
   return { agent, apiKey: raw };
 }

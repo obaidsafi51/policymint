@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, ExternalLink, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, X } from 'lucide-react';
 import { txExplorerLink } from '@/lib/explorer';
 import { formatAddress } from '@/lib/formatAddress';
 
@@ -38,7 +38,7 @@ function stepDot(status: RegistrationStepStatus) {
 
   if (status === 'active') {
     return (
-      <span className="inline-flex h-[14px] w-[14px] animate-spin rounded-[3px] bg-[var(--bg-warning)]" />
+      <span className="inline-flex h-[14px] w-[14px] animate-spin rounded-[3px] bg-[var(--text-warning)]" />
     );
   }
 
@@ -46,6 +46,14 @@ function stepDot(status: RegistrationStepStatus) {
 }
 
 export function RegistrationStep({ step, chainId }: RegistrationStepProps) {
+  async function copyText(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      // no-op
+    }
+  }
+
   return (
     <li className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-3 py-2">
       <div className="flex items-start gap-2">
@@ -54,15 +62,25 @@ export function RegistrationStep({ step, chainId }: RegistrationStepProps) {
           <p className="text-sm text-[var(--text-primary)]">{step.stepNumber}. {step.stepLabel}</p>
           {step.message ? <p className="mt-1 text-xs text-[var(--text-secondary)]">{step.message}</p> : null}
           {step.txHash ? (
-            <a
-              href={txExplorerLink(step.txHash, chainId)}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-1 inline-flex items-center gap-1 font-mono text-xs text-[var(--text-info)] hover:underline"
-            >
-              {formatAddress(step.txHash)}
-              <ExternalLink size={12} className="text-[var(--text-secondary)]" />
-            </a>
+            <div className="mt-1 flex items-center gap-2">
+              <a
+                href={txExplorerLink(step.txHash, chainId)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 font-mono text-xs text-[var(--text-info)] hover:underline"
+              >
+                {formatAddress(step.txHash)}
+                <ExternalLink size={16} className="text-[var(--text-secondary)]" />
+              </a>
+              <button
+                type="button"
+                onClick={() => copyText(step.txHash!)}
+                className="focus-ring inline-flex h-6 w-6 items-center justify-center rounded text-[var(--text-secondary)] hover:text-[var(--text-brand)]"
+                aria-label="Copy transaction hash"
+              >
+                <Copy size={14} />
+              </button>
+            </div>
           ) : null}
         </div>
       </div>
