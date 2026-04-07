@@ -99,7 +99,13 @@ async function processRegistrationJob(
 ) {
   let currentStepNumber = 1;
   let currentStepLabel = 'Saving agent to database';
-  let createdAgent: { id: string } | null = null;
+  let createdAgent:
+    | {
+        id: string;
+        erc8004TokenId: string | null;
+        registrationTxHash: string | null;
+      }
+    | null = null;
   let responseAgent:
     | {
         id: string;
