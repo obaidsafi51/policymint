@@ -44,7 +44,7 @@ export function RegistrationSuccess({ registrationId, agentId, apiKey, txHashes 
             <Copy size={12} /> Copy
           </button>
         </div>
-        <p className="font-mono text-xs text-[var(--text-primary)]">{agentId}</p>
+        <p className="font-mono text-xs text-[var(--text-primary)]">{formatAddress(agentId)}</p>
       </div>
 
       {registrationId ? (
@@ -88,16 +88,25 @@ export function RegistrationSuccess({ registrationId, agentId, apiKey, txHashes 
           <span className="text-xs uppercase tracking-[0.12em] text-[var(--text-tertiary)]">Transaction Hashes</span>
           <div className="space-y-1">
             {txHashes.map((txHash) => (
-              <a
-                key={txHash}
-                href={txExplorerLink(txHash, chainId)}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 font-mono text-xs text-[var(--text-info)] hover:underline"
-              >
-                {formatAddress(txHash)}
-                <ExternalLink size={14} className="text-[var(--text-secondary)]" />
-              </a>
+              <div key={txHash} className="flex items-center gap-2">
+                <a
+                  href={txExplorerLink(txHash, chainId)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 font-mono text-xs text-[var(--text-info)] hover:underline"
+                >
+                  {formatAddress(txHash)}
+                  <ExternalLink size={16} className="text-[var(--text-secondary)]" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => copyText(txHash)}
+                  className="focus-ring inline-flex h-6 w-6 items-center justify-center rounded text-[var(--text-secondary)] hover:text-[var(--text-brand)]"
+                  aria-label="Copy transaction hash"
+                >
+                  <Copy size={14} />
+                </button>
+              </div>
             ))}
           </div>
         </div>
