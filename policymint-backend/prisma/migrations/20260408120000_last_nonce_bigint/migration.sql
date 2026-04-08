@@ -1,0 +1,3 @@
+ALTER TABLE "agents"
+ALTER COLUMN "last_nonce" TYPE BIGINT,
+ALTER COLUMN "last_nonce" SET DEFAULT 0;

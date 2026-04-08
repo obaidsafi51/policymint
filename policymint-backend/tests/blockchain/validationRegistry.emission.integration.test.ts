@@ -83,6 +83,7 @@ describeDb('ValidationRegistry emission integration', () => {
     vi.spyOn(riskRouter, 'submitTradeIntent').mockResolvedValue({
       txHash: `0x${'f'.repeat(64)}` as `0x${string}`,
     });
+    vi.spyOn(riskRouter, 'waitForTradeIntentConfirmation').mockResolvedValue();
     vi.spyOn(reputationRegistry, 'canEmitReputationSignalOnChain').mockReturnValue(false);
 
     const response = await app.inject({
@@ -100,10 +101,20 @@ describeDb('ValidationRegistry emission integration', () => {
     expect(body.result).toBe('allow');
 
     await vi.waitFor(() => {
-      expect(postValidationSpy).toHaveBeenCalledTimes(1);
+      expect(postValidationSpy).toHaveBeenCalledTimes(2);
     });
 
-    expect(postValidationSpy).toHaveBeenCalledWith(
+    expect(postValidationSpy).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        agentId: BigInt(42),
+        evaluationId: body.evaluation_id,
+        score: 70,
+      }),
+    );
+
+    expect(postValidationSpy).toHaveBeenNthCalledWith(
+      2,
       expect.objectContaining({
         agentId: BigInt(42),
         evaluationId: body.evaluation_id,

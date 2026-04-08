@@ -17,6 +17,10 @@ export const publicClient = createPublicClient({
 export const operatorAccount = privateKeyToAccount(env.OPERATOR_WALLET_PRIVATE_KEY as `0x${string}`);
 export const agentAccount = privateKeyToAccount(env.AGENT_WALLET_PRIVATE_KEY as `0x${string}`);
 
+if (operatorAccount.address.toLowerCase() === agentAccount.address.toLowerCase()) {
+  throw new Error('OPERATOR_WALLET_PRIVATE_KEY and AGENT_WALLET_PRIVATE_KEY must resolve to different addresses');
+}
+
 export const operatorWalletClient = createWalletClient({
   account: operatorAccount,
   chain: sepolia,
@@ -31,3 +35,5 @@ export const agentWalletClient = createWalletClient({
 
 export const signerAccount = operatorAccount;
 export const walletClient = operatorWalletClient;
+export const operatorWallet = operatorWalletClient;
+export const agentWallet = agentWalletClient;

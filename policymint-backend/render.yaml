@@ -16,3 +16,27 @@ services:
         sync: false
       - key: JWT_SECRET
         generateValue: true
+      - key: ALCHEMY_RPC_URL
+        sync: false
+      - key: OPERATOR_WALLET_PRIVATE_KEY
+        sync: false
+      - key: AGENT_WALLET_PRIVATE_KEY
+        sync: false
+      - key: RISK_ROUTER_ADDRESS
+        sync: false
+      - key: HACKATHON_VAULT_ADDRESS
+        sync: false
+      - key: IDENTITY_REGISTRY_ADDRESS
+        sync: false
+      - key: VALIDATION_REGISTRY_ADDRESS
+        sync: false
+      - key: REPUTATION_REGISTRY_ADDRESS
+        sync: false
+      - key: PRISM_API_KEY
+        sync: false
+      - key: PRISM_BASE_URL
+        value: https://api.prismapi.ai
+      - key: INTERNAL_SERVICE_KEY
+        sync: false
+      - key: STRATEGY_TICK_INTERVAL_MS
+        value: "450000"

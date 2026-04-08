@@ -51,8 +51,12 @@ export async function submitTradeIntent(
     }),
   );
 
-  logger.info({ contract: 'RiskRouter', txHash }, 'submitTradeIntent submitted');
+  logger.info({ contract: 'RiskRouter', txHash, outcome: 'submitted' }, 'submitTradeIntent submitted');
 
+  return { txHash };
+}
+
+export async function waitForTradeIntentConfirmation(txHash: `0x${string}`): Promise<void> {
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
     confirmations: 1,
@@ -63,7 +67,14 @@ export async function submitTradeIntent(
     throw new Error(`RiskRouter.submitTradeIntent() reverted. tx: ${txHash}`);
   }
 
-  logger.info({ contract: 'RiskRouter', txHash }, 'submitTradeIntent confirmed');
-
-  return { txHash };
+  logger.info(
+    {
+      contract: 'RiskRouter',
+      txHash,
+      blockNumber: receipt.blockNumber.toString(),
+      gasUsed: receipt.gasUsed.toString(),
+      outcome: 'confirmed',
+    },
+    'submitTradeIntent confirmed',
+  );
 }

@@ -9,6 +9,9 @@
     "node": ">=22.0.0",
     "npm": ">=10.0.0"
   },
+  "prisma": {
+    "schema": "prisma/schema.prisma"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "prisma generate && tsc --project tsconfig.build.json",
@@ -48,6 +51,7 @@
     "@types/bcrypt": "^5.0.2",
     "@types/node": "^22.15.0",
     "@types/supertest": "^6.0.3",
+    "@vitest/coverage-v8": "^2.1.9",
     "dotenv-cli": "^8.0.0",
     "prettier": "^3.8.1",
     "supertest": "^7.1.1",

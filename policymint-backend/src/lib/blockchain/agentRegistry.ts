@@ -57,7 +57,7 @@ export async function registerAgentOnChain(
     }),
   );
 
-  logger.info({ contract: 'AgentRegistry', txHash }, 'register transaction submitted');
+  logger.info({ contract: 'AgentRegistry', txHash, outcome: 'submitted' }, 'register transaction submitted');
 
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
@@ -69,7 +69,16 @@ export async function registerAgentOnChain(
     throw new Error(`AgentRegistry.register() reverted. tx: ${txHash}`);
   }
 
-  logger.info({ contract: 'AgentRegistry', txHash }, 'register transaction confirmed');
+  logger.info(
+    {
+      contract: 'AgentRegistry',
+      txHash,
+      blockNumber: receipt.blockNumber?.toString(),
+      gasUsed: receipt.gasUsed?.toString(),
+      outcome: 'confirmed',
+    },
+    'register transaction confirmed',
+  );
 
   let parsedAgentId = BigInt(0);
   const registryAddress = AGENT_REGISTRY.toLowerCase();
