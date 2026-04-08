@@ -45,8 +45,8 @@ function createAppMock() {
 }
 
 describe('index main bootstrap', () => {
-  let onSpy: ReturnType<typeof vi.spyOn> | undefined;
-  let exitSpy: ReturnType<typeof vi.spyOn> | undefined;
+  let onSpy: { mockRestore: () => void } | undefined;
+  let exitSpy: { mockRestore: () => void } | undefined;
 
   beforeEach(() => {
     vi.resetModules();
@@ -98,7 +98,7 @@ describe('index main bootstrap', () => {
     await import('./index.js');
     await new Promise((resolve) => setImmediate(resolve));
 
-    handlers.SIGINT();
+    handlers.SIGINT?.();
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(strategyStopMock).toHaveBeenCalled();
@@ -120,7 +120,7 @@ describe('index main bootstrap', () => {
     await import('./index.js');
     await new Promise((resolve) => setImmediate(resolve));
 
-    handlers.SIGTERM();
+    handlers.SIGTERM?.();
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(strategyStopMock).toHaveBeenCalled();

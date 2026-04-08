@@ -40,7 +40,7 @@ function createProvider(): SignalProvider & {
 } {
   return {
     resolveSymbol: vi.fn(async () => 'BTC/USD'),
-    getSignal: vi.fn(async () => ({ direction: 'neutral', confidence: 0.5 })),
+    getSignal: vi.fn(async () => ({ direction: 'neutral' as const, confidence: 0.5 })),
     getRisk: vi.fn(async () => ({ volatilityScore: 0.2, drawdownRiskScore: 0.3 })),
   };
 }

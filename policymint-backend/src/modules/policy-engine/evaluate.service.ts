@@ -41,6 +41,7 @@ export class EvaluationServiceError extends Error {
     public readonly statusCode: number
   ) {
     super(message);
+    this.name = 'EvaluationServiceError';
   }
 }
 
@@ -62,15 +63,6 @@ function getPrismaErrorCode(error: unknown): string | null {
 
   const code = (error as { code?: unknown }).code;
   return typeof code === 'string' ? code.toUpperCase() : null;
-}
-
-function getPrismaErrorName(error: unknown): string {
-  if (!error || typeof error !== 'object') {
-    return '';
-  }
-
-  const name = (error as { name?: unknown }).name;
-  return typeof name === 'string' ? name : '';
 }
 
 function toActionType(actionType: EvaluateIntentInput['action_type']): ActionType {
@@ -119,7 +111,7 @@ async function getAllowedTradesLastHour(agentId: string): Promise<number> {
       agentId,
       result: EvaluationResult.ALLOW,
       actionType: {
-        in: [ActionType.TRADE, ActionType.SWAP],
+        in: [ActionType.TRADE],
       },
       createdAt: {
         gte: oneHourAgo,
@@ -206,7 +198,7 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
     reason = `Trade rate limit exceeded: max ${MAX_ALLOWED_TRADES_PER_HOUR} allowed trades per rolling hour.`;
   }
 
-  if (result === 'allow' && (intent.action_type === 'trade' || intent.action_type === 'swap')) {
+  if (result === 'allow' && intent.action_type === 'trade') {
     const requestedMaxSlippageBps = getRequestedMaxSlippageBps(intent);
     if (requestedMaxSlippageBps !== null && requestedMaxSlippageBps > MAX_ALLOWED_SLIPPAGE_BPS) {
       result = 'block';
@@ -264,7 +256,11 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
             throw new EvaluationServiceError('Agent not found', 404);
           }
 
-          const newNonce = BigInt(locked[0].last_nonce) + BigInt(1);
+          const currentNonce = locked[0]?.last_nonce;
+          if (typeof currentNonce === 'undefined') {
+            throw new EvaluationServiceError('Agent nonce row missing', 500);
+          }
+          const newNonce = BigInt(currentNonce) + BigInt(1);
 
           const rIntent = await mapToRiskRouterIntent({
             intent,
@@ -313,7 +309,6 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
 
         const errMessage = (err?.message || '').toLowerCase();
         const errCode = getPrismaErrorCode(err);
-        const errName = getPrismaErrorName(err);
         const isTxError = 
           errCode === 'P2034' ||
           errCode === 'P2028' ||
@@ -322,18 +317,12 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
           errMessage.includes('40001') ||
           errMessage.includes('40p01') ||
           errMessage.includes('could not serialize access') ||
-          errMessage.includes('deadlock') ||
-          errMessage.includes('concurrent update') ||
-          errMessage.includes('transaction failed') ||
-          errMessage.includes('write conflict') ||
-          errName === 'PrismaClientKnownRequestError' ||
-          errName === 'PrismaClientRawQueryError';
+          errMessage.includes('deadlock');
 
-        if (isTxError || errName === 'PrismaClientUnknownRequestError') {
+        if (isTxError) {
           retryCount++;
           if (retryCount > 6) {
             const e = new EvaluationServiceError('Nonce conflict detected while persisting submitted trade intent', 500);
-            e.name = 'EvaluationServiceError';
             throw e;
           }
           await new Promise(res => setTimeout(res, Math.random() * 100 + 20));

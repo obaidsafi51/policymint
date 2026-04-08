@@ -4,7 +4,7 @@ const HexAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/);
 
 export const EvaluateIntentSchema = z.object({
   agent_id: z.string().uuid(),
-  action_type: z.enum(['swap', 'transfer', 'bridge', 'trade', 'custom']),
+  action_type: z.enum(['trade']),
   venue: z.string().min(1),
   amount: z.string().min(1),
   token_in: z.string().min(1),
