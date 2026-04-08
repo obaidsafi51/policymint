@@ -18,6 +18,10 @@ const RegistrationProgressParamsSchema = z.object({
 
 const AGENT_METADATA_TYPE = 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1';
 const REGISTRATION_JOB_TTL_MS = 15 * 60 * 1000;
+const POLICYMINT_NAME = 'PolicyMint';
+const POLICYMINT_DESCRIPTION =
+  'Policy-protected autonomous trading agent with provable risk controls. Enforces spend caps, venue allowlists, and daily loss budgets via EIP-712 signed validation artifacts on every trade intent.';
+const FRONTEND_SERVICE_ENDPOINT = 'https://policymint.vercel.app';
 
 type RegistrationStatus = 'pending' | 'active' | 'done' | 'failed';
 
@@ -62,6 +66,24 @@ const agentResponseSelect = {
 function toDataUriJson(data: Record<string, unknown>) {
   const payload = Buffer.from(JSON.stringify(data), 'utf8').toString('base64');
   return `data:application/json;base64,${payload}`;
+}
+
+function buildPolicyMintAgentUri() {
+  return toDataUriJson({
+    type: AGENT_METADATA_TYPE,
+    name: POLICYMINT_NAME,
+    description: POLICYMINT_DESCRIPTION,
+    services: [{ name: 'web', endpoint: FRONTEND_SERVICE_ENDPOINT }],
+    active: true,
+  });
+}
+
+function buildLegacyAgentDescription(strategyType: string) {
+  return `${strategyType} strategy agent managed by PolicyMint`;
+}
+
+function buildLegacyCapabilities() {
+  return ['policy-evaluation', 'risk-routing', 'eip712-signing'];
 }
 
 function createRegistrationJob(id: string): RegistrationJob {
@@ -153,26 +175,12 @@ async function processRegistrationJob(
     });
 
     if (canRegisterAgentOnChain()) {
-      const frontendUrl = 'https://policymint.vercel.app';
-      const agentURI = input.metadataUri
-        ? input.metadataUri
-        : toDataUriJson({
-            type: AGENT_METADATA_TYPE,
-            name: input.name,
-            description: `${input.strategyType} strategy agent managed by PolicyMint`,
-            services: [
-              {
-                type: 'dashboard',
-                endpoint: frontendUrl,
-              },
-            ],
-            active: true,
-          });
+      const agentURI = buildPolicyMintAgentUri();
 
       const { agentId, txHash } = await registerAgentOnChain({
         name: input.name,
-        description: `${input.strategyType} strategy agent managed by PolicyMint`,
-        capabilities: ['policy-evaluation', 'risk-routing', 'eip712-signing'],
+        description: buildLegacyAgentDescription(input.strategyType),
+        capabilities: buildLegacyCapabilities(),
         agentURI,
       });
 
@@ -428,29 +436,22 @@ export async function agentRoutes(app: FastifyInstance) {
     let responseAgent = result.agent;
 
     if (canRegisterAgentOnChain()) {
-      try {
-        const frontendUrl = 'https://policymint.vercel.app';
-        const agentURI = body.data.metadataUri
-          ? body.data.metadataUri
-          : toDataUriJson({
-              type: AGENT_METADATA_TYPE,
-              name: body.data.name,
-              description: `${body.data.strategyType} strategy agent managed by PolicyMint`,
-              services: [
-                {
-                  type: 'dashboard',
-                  endpoint: frontendUrl,
-                },
-              ],
-              active: true,
-            });
+      const agentURI = buildPolicyMintAgentUri();
+      let onChainRegistration: { agentId: bigint; txHash: `0x${string}` } | null = null;
 
-        const { agentId, txHash } = await registerAgentOnChain({
+      try {
+        onChainRegistration = await registerAgentOnChain({
           name: body.data.name,
-          description: `${body.data.strategyType} strategy agent managed by PolicyMint`,
-          capabilities: ['policy-evaluation', 'risk-routing', 'eip712-signing'],
+          description: buildLegacyAgentDescription(body.data.strategyType),
+          capabilities: buildLegacyCapabilities(),
           agentURI,
         });
+      } catch (err) {
+        app.log.error({ err, agent_id: result.agent.id }, 'On-chain agent registration failed');
+      }
+
+      if (onChainRegistration) {
+        const { agentId, txHash } = onChainRegistration;
 
         const agentBeforeClaim = await prisma.agent.findUnique({
           where: { id: result.agent.id },
@@ -494,8 +495,6 @@ export async function agentRoutes(app: FastifyInstance) {
             );
           }
         }
-      } catch (err) {
-        app.log.error({ err, agent_id: result.agent.id }, 'On-chain agent registration failed');
       }
     } else {
       app.log.warn(

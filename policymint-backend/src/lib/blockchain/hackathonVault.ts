@@ -19,7 +19,10 @@ export async function claimHackathonAllocation(agentId: bigint): Promise<`0x${st
     }),
   );
 
-  logger.info({ contract: 'HackathonVault', txHash, agentId: agentId.toString() }, 'claimAllocation submitted');
+  logger.info(
+    { contract: 'HackathonVault', txHash, agentId: agentId.toString(), outcome: 'submitted' },
+    'claimAllocation submitted',
+  );
 
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
@@ -31,7 +34,17 @@ export async function claimHackathonAllocation(agentId: bigint): Promise<`0x${st
     throw new Error(`HackathonVault.claimAllocation() reverted for agentId=${agentId}. tx: ${txHash}`);
   }
 
-  logger.info({ contract: 'HackathonVault', txHash, agentId: agentId.toString() }, 'claimAllocation confirmed');
+  logger.info(
+    {
+      contract: 'HackathonVault',
+      txHash,
+      agentId: agentId.toString(),
+      blockNumber: receipt.blockNumber?.toString(),
+      gasUsed: receipt.gasUsed?.toString(),
+      outcome: 'confirmed',
+    },
+    'claimAllocation confirmed',
+  );
 
   return txHash;
 }

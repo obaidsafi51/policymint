@@ -19,7 +19,7 @@ model Agent {
   apiKeyHash         String             @map("api_key_hash")
   apiKeyPrefix       String             @map("api_key_prefix")
   isActive           Boolean            @default(true) @map("is_active")
-  lastNonce          Int                @default(0) @map("last_nonce")
+  lastNonce          BigInt             @default(0) @map("last_nonce")
   createdAt          DateTime           @default(now()) @map("created_at")
   updatedAt          DateTime           @updatedAt @map("updated_at")
   registrationTxHash String?            @map("registration_tx_hash")
@@ -110,6 +110,21 @@ model ReputationSignal {
   @@index([agentId, createdAt(sort: Desc)])
   @@index([agentId, signalType])
   @@map("reputation_signals")
+}
+
+model ReputationLog {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentId      String   @map("agent_id") @db.Uuid
+  evaluationId String   @map("evaluation_id") @db.Uuid
+  attempt      Int
+  status       String
+  txHash       String?  @map("tx_hash")
+  errorMessage String?  @map("error_message")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([evaluationId, createdAt(sort: Desc)])
+  @@index([agentId, createdAt(sort: Desc)])
+  @@map("reputation_log")
 }
 
 model StrategyCycle {

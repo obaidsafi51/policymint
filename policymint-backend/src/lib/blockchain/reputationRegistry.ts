@@ -11,6 +11,9 @@ export const FeedbackType = {
   RISK_MANAGEMENT: 1,
   STRATEGY_QUALITY: 2,
   GENERAL: 3,
+  POSITIVE: 1,
+  NEUTRAL: 2,
+  NEGATIVE: 3,
 } as const;
 
 type FeedbackTypeValue = (typeof FeedbackType)[keyof typeof FeedbackType];
@@ -69,7 +72,7 @@ export async function emitReputationSignal(params: EmitSignalParams): Promise<`0
     }),
   );
 
-  logger.info({ contract: 'ReputationRegistry', txHash }, 'submitFeedback submitted');
+  logger.info({ contract: 'ReputationRegistry', txHash, outcome: 'submitted' }, 'submitFeedback submitted');
 
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
@@ -81,7 +84,16 @@ export async function emitReputationSignal(params: EmitSignalParams): Promise<`0
     throw new Error(`ReputationRegistry.submitFeedback() reverted. tx: ${txHash}`);
   }
 
-  logger.info({ contract: 'ReputationRegistry', txHash }, 'submitFeedback confirmed');
+  logger.info(
+    {
+      contract: 'ReputationRegistry',
+      txHash,
+      blockNumber: receipt.blockNumber?.toString(),
+      gasUsed: receipt.gasUsed?.toString(),
+      outcome: 'confirmed',
+    },
+    'submitFeedback confirmed',
+  );
 
   return txHash;
 }

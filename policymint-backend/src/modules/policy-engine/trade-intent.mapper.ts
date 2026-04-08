@@ -1,5 +1,6 @@
 import { env } from '../../config/env.js';
 import type { EvaluateIntentInput } from './evaluate.schema.js';
+import { publicClient } from '../../lib/blockchain/client.js';
 
 export interface RiskRouterTradeIntent {
   agentId: bigint;
@@ -22,6 +23,7 @@ const TOKEN_DECIMALS: Record<string, number> = {
   USDC: 6,
   USDT: 6,
   DAI: 18,
+  USD: 6,
 };
 
 const TOKEN_TO_KRAKEN_PAIR: Record<string, string> = {
@@ -34,6 +36,7 @@ const TOKEN_TO_KRAKEN_PAIR: Record<string, string> = {
   USDC: 'USDCUSD',
   USDT: 'USDTUSD',
   DAI: 'DAIUSD',
+  USD: 'USDUSD',
 };
 
 const PRICE_CACHE_TTL_MS = 30_000;
@@ -47,17 +50,17 @@ function normalizeSymbol(symbol: string): string {
 }
 
 function mapAction(intent: EvaluateIntentInput): string {
+  if (intent.action_type !== 'trade') {
+    throw new Error(`RiskRouter only supports action_type "trade". Received: ${intent.action_type}`);
+  }
+
   const side = typeof intent.params?.side === 'string' ? intent.params.side.toLowerCase() : null;
 
   if (side === 'buy' || side === 'sell') {
-    return side.toUpperCase();
+    return side;
   }
 
-  if (intent.action_type === 'trade' || intent.action_type === 'swap') {
-    return 'BUY';
-  }
-
-  return 'SELL';
+  return 'buy';
 }
 
 function toUnitAmount(amountRaw: string, decimals: number): number {
@@ -142,23 +145,75 @@ async function getKrakenUsdPrice(tokenSymbol: string): Promise<number> {
   return price;
 }
 
+async function getPrismUsdPrice(tokenSymbol: string): Promise<number | null> {
+  if (env.NODE_ENV === 'test') {
+    return 1;
+  }
+
+  const normalized = normalizeSymbol(tokenSymbol);
+  const url = `${env.PRISM_BASE_URL.replace(/\/$/, '')}/crypto/${encodeURIComponent(normalized)}/price`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), KRAKEN_FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${env.PRISM_API_KEY}`,
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as Record<string, unknown>;
+    const candidate =
+      payload.priceUsd ?? payload.price_usd ?? payload.price ?? payload.usd ?? payload.value;
+    const parsed = Number(candidate);
+
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function resolveUsdPrice(tokenSymbol: string): Promise<number> {
+  if (normalizeSymbol(tokenSymbol) === 'USD') {
+    return 1;
+  }
+
+  const prismPrice = await getPrismUsdPrice(tokenSymbol);
+  if (prismPrice !== null) {
+    return prismPrice;
+  }
+
+  return getKrakenUsdPrice(tokenSymbol);
+}
+
 function resolvePair(tokenIn: string, tokenOut?: string): string {
   const base = normalizeSymbol(tokenIn);
   const quote = normalizeSymbol(tokenOut ?? 'USD');
-  return `${base}${quote}`;
+  return `${base}/${quote}`;
 }
 
 export async function mapToRiskRouterIntent(input: {
   intent: EvaluateIntentInput;
   erc8004TokenId: string;
   agentWalletAddress: `0x${string}`;
-  nonce: number;
+  nonce: bigint;
   defaultMaxSlippageBps?: number;
 }): Promise<RiskRouterTradeIntent> {
   const tokenIn = normalizeSymbol(input.intent.token_in);
   const tokenOut = normalizeSymbol(input.intent.token_out ?? 'USD');
   const decimals = TOKEN_DECIMALS[tokenIn] ?? 18;
-  const priceUsd = await getKrakenUsdPrice(tokenIn);
+  const priceUsd = await resolveUsdPrice(tokenIn);
   const amountUnits = toUnitAmount(input.intent.amount, decimals);
   const amountUsdScaled = BigInt(Math.max(0, Math.round(amountUnits * priceUsd * 1_000_000)));
   const maxSlippageBpsFromParams = Number(input.intent.params?.max_slippage_bps ?? NaN);
@@ -170,6 +225,11 @@ export async function mapToRiskRouterIntent(input: {
     throw new Error(`maxSlippageBps exceeds backend ceiling (${MAX_SLIPPAGE_BPS})`);
   }
 
+  const deadline =
+    env.NODE_ENV === 'test'
+      ? BigInt(Math.floor(Date.now() / 1_000) + 300)
+      : (await publicClient.getBlock({ blockTag: 'latest' })).timestamp + BigInt(300);
+
   return {
     agentId: BigInt(input.erc8004TokenId),
     agentWallet: input.agentWalletAddress,
@@ -177,7 +237,7 @@ export async function mapToRiskRouterIntent(input: {
     action: mapAction(input.intent),
     amountUsdScaled,
     maxSlippageBps: BigInt(maxSlippageBps),
-    nonce: BigInt(input.nonce),
-    deadline: BigInt(Math.floor(Date.now() / 1_000) + 300),
+    nonce: input.nonce,
+    deadline,
   };
 }

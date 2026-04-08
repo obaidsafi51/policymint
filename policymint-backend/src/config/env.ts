@@ -44,11 +44,14 @@ const EnvSchema = z.object({
     emptyToUndefined,
     z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
   ),
+  PRISM_API_KEY: z.preprocess(emptyToUndefined, z.string().min(1)),
+  PRISM_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().default('https://api.prismapi.ai')),
   SENTRY_DSN: z.preprocess(emptyToUndefined, z.string().url().optional()),
   KRAKEN_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
   KRAKEN_API_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
   KRAKEN_CLI_PATH: z.preprocess(emptyToUndefined, z.string().default('kraken')),
   STRATEGY_TRADE_AMOUNT_USD: z.coerce.number().positive().max(450).default(100),
+  STRATEGY_TICK_INTERVAL_MS: z.coerce.number().int().positive().default(450000),
   AGENT_ID: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
 });
 

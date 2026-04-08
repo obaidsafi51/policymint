@@ -18,8 +18,11 @@ const validEnv = {
   RISK_ROUTER_ADDRESS: '0xd6A6952545FF6E6E6681c2d15C59f9EB8F40FdBC',
   HACKATHON_VAULT_ADDRESS: '0x0E7CD8ef9743FEcf94f9103033a044caBD45fC90',
   INTERNAL_SERVICE_KEY: 'test-internal-service-key-at-least-32-characters',
+  PRISM_API_KEY: 'prism_sk_test_key',
+  PRISM_BASE_URL: 'https://api.prismapi.ai',
   KRAKEN_CLI_PATH: 'kraken',
   STRATEGY_TRADE_AMOUNT_USD: '100',
+  STRATEGY_TICK_INTERVAL_MS: '450000',
   AGENT_ID: '018f5f93-1ecf-7cc0-bf2f-0d72f12a9c1b',
 };
 

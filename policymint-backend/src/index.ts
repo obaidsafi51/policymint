@@ -1,9 +1,11 @@
 import { buildApp } from './app.js';
 import { StrategyLoop } from './agent/loop.js';
 import { env } from './config/env.js';
+import { validateStartupConfiguration } from './config/startup.js';
 import { prisma } from './db/client.js';
 
 async function main() {
+  validateStartupConfiguration();
   const app = await buildApp();
   const strategyLoop = new StrategyLoop();
 

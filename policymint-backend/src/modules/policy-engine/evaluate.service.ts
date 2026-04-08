@@ -20,14 +20,14 @@ interface EvaluateIntentResponse {
 
 const MAX_ALLOWED_TRADES_PER_HOUR = 8;
 const MAX_ALLOWED_SLIPPAGE_BPS = 200;
-const MAX_NONCE_ALLOCATION_ATTEMPTS = 2;
+const RISK_ROUTER_SPEND_CAP_USD_SCALED = BigInt(450_000_000);
 
 function fallbackRiskIntent(intent: EvaluateIntentInput) {
   return {
     agentId: BigInt(0),
     agentWallet: agentAccount.address,
-    pair: `${intent.token_in.toUpperCase()}${(intent.token_out ?? 'USD').toUpperCase()}`,
-    action: intent.action_type === 'trade' || intent.action_type === 'swap' ? 'BUY' : 'SELL',
+    pair: `${intent.token_in.toUpperCase()}/${(intent.token_out ?? 'USD').toUpperCase()}`,
+    action: 'buy',
     amountUsdScaled: BigInt(0),
     maxSlippageBps: BigInt(50),
     nonce: BigInt(0),
@@ -42,6 +42,35 @@ export class EvaluationServiceError extends Error {
   ) {
     super(message);
   }
+}
+
+function isEvaluationServiceErrorLike(
+  error: unknown,
+): error is { message: string; statusCode: number; name?: string } {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const candidate = error as { message?: unknown; statusCode?: unknown; name?: unknown };
+  return typeof candidate.message === 'string' && typeof candidate.statusCode === 'number';
+}
+
+function getPrismaErrorCode(error: unknown): string | null {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code.toUpperCase() : null;
+}
+
+function getPrismaErrorName(error: unknown): string {
+  if (!error || typeof error !== 'object') {
+    return '';
+  }
+
+  const name = (error as { name?: unknown }).name;
+  return typeof name === 'string' ? name : '';
 }
 
 function toActionType(actionType: EvaluateIntentInput['action_type']): ActionType {
@@ -224,63 +253,94 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
   };
 
   if (result === 'allow' && agent.erc8004TokenId) {
-    let previousNonce = agent.lastNonce;
-    let allocationSucceeded = false;
+    let success = false;
+    let retryCount = 0;
 
-    for (let attempt = 0; attempt < MAX_NONCE_ALLOCATION_ATTEMPTS; attempt += 1) {
-      const candidateNonce = previousNonce + 1;
-      const candidateRiskIntent = await mapToRiskRouterIntent({
-        intent,
-        erc8004TokenId: agent.erc8004TokenId,
-        agentWalletAddress: agentAccount.address,
-        nonce: candidateNonce,
-        defaultMaxSlippageBps: 50,
-      });
+    while (!success && retryCount <= 6) {
+      try {
+        const txResult = await prisma.$transaction(async (tx) => {
+          const locked = await tx.$queryRaw<{ last_nonce: bigint }[]>`SELECT "last_nonce" FROM "agents" WHERE "id" = ${agent.id}::uuid FOR UPDATE`;
+          if (!locked || locked.length === 0) {
+            throw new EvaluationServiceError('Agent not found', 404);
+          }
 
-      const candidateSignature = await signEvaluatedIntent({ intent: candidateRiskIntent });
+          const newNonce = BigInt(locked[0].last_nonce) + BigInt(1);
 
-      const committed = await prisma.$transaction(async tx => {
-        const updateResult = await tx.agent.updateMany({
-          where: {
-            id: intent.agent_id,
-            lastNonce: previousNonce,
-          },
-          data: {
-            lastNonce: candidateNonce,
-          },
+          const rIntent = await mapToRiskRouterIntent({
+            intent,
+            erc8004TokenId: agent.erc8004TokenId!,
+            agentWalletAddress: agentAccount.address,
+            nonce: newNonce,
+            defaultMaxSlippageBps: 50,
+          });
+
+          if (rIntent.amountUsdScaled > RISK_ROUTER_SPEND_CAP_USD_SCALED) {
+            throw new EvaluationServiceError(
+              'Trade blocked: RiskRouter hard limit exceeded (spend cap per tx > $450)',
+              422,
+            );
+          }
+
+          const signature = await signEvaluatedIntent({ intent: rIntent });
+
+          await tx.agent.update({
+            where: { id: agent.id },
+            data: { lastNonce: newNonce }
+          });
+
+          await tx.intentEvaluation.create({
+            data: {
+              ...baseEvaluationData,
+              eip712SignedIntent: signature,
+            },
+          });
+
+          return { rIntent, signature };
+        }, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable
         });
 
-        if (updateResult.count !== 1) {
-          return false;
+        riskIntentForExecution = txResult.rIntent;
+        eip712SignedIntent = txResult.signature;
+        success = true;
+      } catch (err: any) {
+        if (
+          isEvaluationServiceErrorLike(err) &&
+          err.message !== 'Nonce conflict detected while persisting submitted trade intent'
+        ) {
+          throw err;
         }
 
-        await tx.intentEvaluation.create({
-          data: {
-            ...baseEvaluationData,
-            eip712SignedIntent: candidateSignature,
-          },
-        });
+        const errMessage = (err?.message || '').toLowerCase();
+        const errCode = getPrismaErrorCode(err);
+        const errName = getPrismaErrorName(err);
+        const isTxError = 
+          errCode === 'P2034' ||
+          errCode === 'P2028' ||
+          errCode === '40001' ||
+          errCode === '40P01' ||
+          errMessage.includes('40001') ||
+          errMessage.includes('40p01') ||
+          errMessage.includes('could not serialize access') ||
+          errMessage.includes('deadlock') ||
+          errMessage.includes('concurrent update') ||
+          errMessage.includes('transaction failed') ||
+          errMessage.includes('write conflict') ||
+          errName === 'PrismaClientKnownRequestError' ||
+          errName === 'PrismaClientRawQueryError';
 
-        return true;
-      });
-
-      if (committed) {
-        riskIntentForExecution = candidateRiskIntent;
-        eip712SignedIntent = candidateSignature;
-        allocationSucceeded = true;
-        break;
+        if (isTxError || errName === 'PrismaClientUnknownRequestError') {
+          retryCount++;
+          if (retryCount > 6) {
+            const e = new EvaluationServiceError('Nonce conflict detected while persisting submitted trade intent', 500);
+            e.name = 'EvaluationServiceError';
+            throw e;
+          }
+          await new Promise(res => setTimeout(res, Math.random() * 100 + 20));
+        } else {
+          throw err;
+        }
       }
-
-      const refreshedAgent = await prisma.agent.findUnique({
-        where: { id: intent.agent_id },
-        select: { lastNonce: true },
-      });
-
-      previousNonce = refreshedAgent?.lastNonce ?? previousNonce;
-    }
-
-    if (!allocationSucceeded) {
-      throw new EvaluationServiceError('Failed to allocate nonce for agent due to concurrent updates', 409);
     }
   } else {
     eip712SignedIntent = await signEvaluatedIntent({ intent: fallbackRiskIntent(intent) });
