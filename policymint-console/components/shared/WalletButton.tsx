@@ -1,7 +1,7 @@
 'use client';
 
 import { ConnectKitButton } from 'connectkit';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { formatAddress } from '@/lib/formatAddress';
 import { useAuth } from '@/hooks/useAuth';
@@ -42,7 +42,7 @@ export function WalletButton({ autoSignIn = false }: WalletButtonProps) {
   const addressChipClass =
     'inline-flex h-9 items-center rounded-base border border-[var(--border-default)] bg-[var(--bg-surface)] px-3 font-[var(--font-mono)] text-[13px]';
 
-  async function handleSignIn() {
+  const handleSignIn = useCallback(async () => {
     try {
       setError(null);
       setAutoSignInSuppressed(false);
@@ -60,7 +60,7 @@ export function WalletButton({ autoSignIn = false }: WalletButtonProps) {
       const message = caughtError instanceof Error ? caughtError.message : 'Authentication failed';
       setError(message);
     }
-  }
+  }, [pathname, router, signIn]);
 
   useEffect(() => {
     if (
@@ -82,7 +82,7 @@ export function WalletButton({ autoSignIn = false }: WalletButtonProps) {
 
     attemptedAutoSignInFor.current = normalizedAddress;
     void handleSignIn();
-  }, [autoSignIn, autoSignInSuppressed, authenticated, connectedAddress, isConnected, loading, wrongNetwork]);
+  }, [autoSignIn, autoSignInSuppressed, authenticated, connectedAddress, handleSignIn, isConnected, loading, wrongNetwork]);
 
   useEffect(() => {
     if (!isConnected) {
