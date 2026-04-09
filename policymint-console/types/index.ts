@@ -37,7 +37,9 @@ export interface AgentConfig {
 }
 
 export interface SimulateResult {
-  onChain: { valid: boolean; reason: string }
+  onChain:
+    | { status: 'ok'; valid: boolean; reason: string }
+    | { status: 'unavailable'; reason: string }
   policyEngine: PolicyDecision | null
   latency_ms: number
   checklist: PolicyChecklistItem[]
