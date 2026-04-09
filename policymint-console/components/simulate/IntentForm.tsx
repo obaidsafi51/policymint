@@ -103,7 +103,7 @@ export function IntentForm({ isLoading, onSubmit }: IntentFormProps) {
         className="focus-ring inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-transparent bg-[var(--text-brand)] px-3 text-sm font-semibold text-[var(--text-on-brand)] transition-transform duration-micro hover:scale-[0.98] disabled:opacity-80"
       >
         {isLoading ? <Loader2 size={14} className="animate-spin" /> : null}
-        Evaluate intent
+        Simulate intent
       </button>
 
       <button

@@ -15,6 +15,11 @@ interface EvaluateResponse {
   eip712_signed_intent: string;
 }
 
+type SimulateIntentResult = {
+  valid: boolean;
+  reason: string;
+};
+
 function buildChecklist(result: 'allow' | 'block', reason: string | null): PolicyChecklistItem[] {
   if (result === 'allow') {
     return defaultChecklist;
@@ -39,10 +44,21 @@ function buildChecklist(result: 'allow' | 'block', reason: string | null): Polic
   ];
 }
 
-async function simulateOnChain(agentId: string, intent: TradeIntent) {
-  const pair = `${intent.token_in.toUpperCase()}${(intent.token_out ?? 'USD').toUpperCase()}`;
-  const action = intent.action_type === 'trade' || intent.action_type === 'swap' ? 'BUY' : 'SELL';
-  const amountUsdScaled = BigInt(Math.floor(Number(intent.amount) * 1_000_000));
+function resolveAction(intent: TradeIntent): 'buy' | 'sell' {
+  const direction = String(intent.params?.direction ?? '').toLowerCase();
+
+  if (direction === 'sell') {
+    return 'sell';
+  }
+
+  return 'buy';
+}
+
+async function simulateOnChain(agentId: string, intent: TradeIntent): Promise<SimulateIntentResult> {
+  const pair = `${intent.token_in.toUpperCase()}/${(intent.token_out ?? 'USD').toUpperCase()}`;
+  const action = resolveAction(intent);
+  const amount = Number(intent.amount);
+  const amountUsdScaled = BigInt(Math.floor(amount * 1_000_000));
 
   const result = await publicClient.readContract({
     address: RISK_ROUTER_ADDRESS,
@@ -50,6 +66,13 @@ async function simulateOnChain(agentId: string, intent: TradeIntent) {
     functionName: 'simulateIntent',
     args: [BigInt(agentId), pair, action, amountUsdScaled],
   });
+
+  if (Array.isArray(result)) {
+    return {
+      valid: Boolean(result[0]),
+      reason: String(result[1] ?? ''),
+    };
+  }
 
   return {
     valid: Boolean(result.valid),
@@ -69,9 +92,11 @@ export function useSimulate(agentUuid: string, agentTokenId: string) {
     try {
       const start = performance.now();
 
-      let onChain = { valid: true, reason: 'demo mode' };
-      if (hasApiUrl()) {
+      let onChain: SimulateIntentResult = { valid: true, reason: 'demo mode' };
+      try {
         onChain = await simulateOnChain(agentTokenId || '0', intent);
+      } catch {
+        onChain = { valid: false, reason: 'on-chain simulation unavailable' };
       }
 
       if (!hasApiUrl()) {

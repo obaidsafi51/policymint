@@ -22,7 +22,7 @@ export function SimulateResultPanel({ result, isLoading, error }: SimulateResult
       <section className={`rounded-xl bg-[var(--bg-surface)] p-5 ${borderClass}`}>
         {!result && !isLoading && !error ? (
           <div>
-            <p className="font-headline text-3xl font-bold tracking-tight text-[var(--text-primary)]">Waiting for intent</p>
+            <p className="font-headline text-3xl font-bold tracking-tight text-[var(--text-primary)]">Enter an intent to simulate</p>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
               active policies: venue allowlist, spend cap per tx, daily loss budget.
             </p>
@@ -47,7 +47,7 @@ export function SimulateResultPanel({ result, isLoading, error }: SimulateResult
             <p
               className={`mt-3 font-headline text-4xl font-bold leading-none ${verdict === 'allow' ? 'text-[var(--text-success)]' : 'text-[var(--text-danger)]'}`}
             >
-              {verdict === 'allow' ? 'intent allowed' : 'intent blocked'}
+              {verdict === 'allow' ? 'Intent allowed' : 'Intent blocked'}
             </p>
             {verdict === 'block' && result.policyEngine?.reason ? (
               <p className="mt-2 text-sm text-[var(--text-danger)]">{result.policyEngine.reason}</p>
