@@ -93,7 +93,12 @@ export async function postValidationRecord(
   }
 
   logger.info(
-    { contract: 'ValidationRegistry', txHash, blockNumber: receipt.blockNumber.toString() },
+    {
+      contract: 'ValidationRegistry',
+      txHash,
+      blockNumber: receipt.blockNumber.toString(),
+      gasUsed: receipt.gasUsed.toString(),
+    },
     'postEIP712Attestation confirmed',
   );
 

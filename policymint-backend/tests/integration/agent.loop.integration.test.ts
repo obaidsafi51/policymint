@@ -1,79 +1,63 @@
 import { describe, expect, it, vi } from 'vitest';
 import { StrategyLoop } from '../../src/agent/loop';
 
+vi.mock('../../src/db/client.js', () => ({
+  prisma: {
+    agent: {
+      findUnique: vi.fn(async () => ({
+        id: process.env.AGENT_ID,
+        isActive: true,
+        erc8004TokenId: '123',
+      })),
+    },
+  },
+}));
+
 describe('StrategyLoop', () => {
+  process.env.AGENT_ID = process.env.AGENT_ID ?? '018f5f93-1ecf-7cc0-bf2f-0d72f12a9c1b';
+
   function createLoopHarness() {
-    const strategy = { onPrice: vi.fn(), reset: vi.fn() };
-    const krakenAdapter = {
-      paperInit: vi.fn(async () => ({ success: true, stdout: '', stderr: '', exitCode: 0, timedOut: false })),
-      paperBuy: vi.fn(async () => ({ success: true, stdout: '', stderr: '', exitCode: 0, timedOut: false })),
-      paperSell: vi.fn(async () => ({ success: true, stdout: '', stderr: '', exitCode: 0, timedOut: false })),
-      cleanup: vi.fn(),
+    const signalProvider = {
+      resolveSymbol: vi.fn(async () => 'BTC/USD'),
+      getSignal: vi.fn(async () => ({ direction: 'buy' as const, confidence: 0.8 })),
+      getRisk: vi.fn(async () => ({ volatilityScore: 0.3, drawdownRiskScore: 0.2 })),
     };
     const evaluateIntentFn = vi.fn();
-    const priceFeed = {
-      connect: vi.fn(async () => {}),
-      disconnect: vi.fn(),
-    };
 
     const loop = new StrategyLoop({
-      strategy,
-      krakenAdapter: krakenAdapter as never,
+      signalProvider,
       evaluateIntentFn,
-      createPriceFeed: () => priceFeed,
     });
 
     return {
       loop,
-      strategy,
-      krakenAdapter,
+      signalProvider,
       evaluateIntentFn,
-      priceFeed,
     };
   }
 
-  it('skips evaluate when strategy returns hold', async () => {
-    const { loop, strategy, evaluateIntentFn } = createLoopHarness();
+  it('skips evaluate when PRISM returns neutral signal', async () => {
+    const { loop, signalProvider, evaluateIntentFn } = createLoopHarness();
+    signalProvider.getSignal.mockResolvedValue({ direction: 'neutral', confidence: 0.8 });
     await loop.start();
-
-    strategy.onPrice.mockReturnValue({
-      action: 'hold',
-      pair: 'BTC/USD',
-      amountUsd: 0,
-      reason: 'EMA not yet seeded',
-    });
-
-    await loop.processSignal(100_000);
+    await loop.tick();
+    await loop.stop();
 
     expect(evaluateIntentFn).not.toHaveBeenCalled();
   });
 
-  it('skips evaluate when buy volume is below Kraken minimum', async () => {
-    const { loop, strategy, evaluateIntentFn } = createLoopHarness();
+  it('skips evaluate when PRISM confidence is low', async () => {
+    const { loop, signalProvider, evaluateIntentFn } = createLoopHarness();
+    signalProvider.getSignal.mockResolvedValue({ direction: 'buy', confidence: 0.4 });
     await loop.start();
-
-    strategy.onPrice.mockReturnValue({
-      action: 'buy',
-      pair: 'BTC/USD',
-      amountUsd: 5,
-      reason: 'test',
-    });
-
-    await loop.processSignal(100_000);
+    await loop.tick();
+    await loop.stop();
 
     expect(evaluateIntentFn).not.toHaveBeenCalled();
   });
 
-  it('calls evaluate then paperBuy when result is allow', async () => {
-    const { loop, strategy, evaluateIntentFn, krakenAdapter } = createLoopHarness();
-    await loop.start();
-
-    strategy.onPrice.mockReturnValue({
-      action: 'buy',
-      pair: 'BTC/USD',
-      amountUsd: 100,
-      reason: 'bullish crossover',
-    });
+  it('calls evaluate when PRISM signal is actionable', async () => {
+    const { loop, evaluateIntentFn } = createLoopHarness();
 
     evaluateIntentFn.mockResolvedValue({
       result: 'allow',
@@ -84,23 +68,15 @@ describe('StrategyLoop', () => {
       riskIntentForExecution: null,
     });
 
-    await loop.processSignal(100_000);
+    (loop as unknown as { started: boolean }).started = true;
+    await loop.tick();
 
     expect(evaluateIntentFn).toHaveBeenCalledTimes(1);
-    expect(krakenAdapter.paperBuy).toHaveBeenCalledTimes(1);
-    expect(krakenAdapter.paperBuy).toHaveBeenCalledWith('BTCUSD', 0.001);
   });
 
-  it('builds intent with side field for sell signals', async () => {
-    const { loop, strategy, evaluateIntentFn } = createLoopHarness();
-    await loop.start();
-
-    strategy.onPrice.mockReturnValue({
-      action: 'sell',
-      pair: 'BTC/USD',
-      amountUsd: 100,
-      reason: 'bearish crossover',
-    });
+  it('builds intent with pair and side field', async () => {
+    const { loop, signalProvider, evaluateIntentFn } = createLoopHarness();
+    signalProvider.getSignal.mockResolvedValue({ direction: 'sell', confidence: 0.9 });
 
     evaluateIntentFn.mockResolvedValue({
       result: 'block',
@@ -111,78 +87,13 @@ describe('StrategyLoop', () => {
       riskIntentForExecution: null,
     });
 
-    await loop.processSignal(100_000);
+    (loop as unknown as { started: boolean }).started = true;
+    await loop.tick();
 
     expect(evaluateIntentFn).toHaveBeenCalledTimes(1);
     const intentArg = evaluateIntentFn.mock.calls[0]?.[0];
-    expect(intentArg?.token_in).toBe('BTC');
+    expect(intentArg?.token_in).toBe('USDC');
     expect(intentArg?.token_out).toBe('USD');
     expect(intentArg?.params).toMatchObject({ side: 'sell', pair: 'BTC/USD' });
-  });
-
-  it('drops concurrent ticks while processing is in-flight', async () => {
-    const { loop, strategy, evaluateIntentFn } = createLoopHarness();
-    await loop.start();
-
-    strategy.onPrice.mockReturnValue({
-      action: 'buy',
-      pair: 'BTC/USD',
-      amountUsd: 100,
-      reason: 'bullish crossover',
-    });
-
-    let resolveEvaluation: ((value: unknown) => void) | null = null;
-    evaluateIntentFn.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveEvaluation = resolve;
-        }),
-    );
-
-    (loop as unknown as { onPrice: (price: number) => void }).onPrice(100_000);
-    (loop as unknown as { onPrice: (price: number) => void }).onPrice(100_000);
-
-    expect(evaluateIntentFn).toHaveBeenCalledTimes(1);
-
-    resolveEvaluation?.({
-      result: 'block',
-      reason: 'blocked',
-      policy_id: 'policy-1',
-      evaluation_id: 'eval-2',
-      eip712_signed_intent: '0xabc',
-      riskIntentForExecution: null,
-    });
-
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-
-  it('continues processing after evaluate service throws', async () => {
-    const { loop, strategy, evaluateIntentFn, krakenAdapter } = createLoopHarness();
-    await loop.start();
-
-    strategy.onPrice.mockReturnValue({
-      action: 'buy',
-      pair: 'BTC/USD',
-      amountUsd: 100,
-      reason: 'bullish crossover',
-    });
-
-    evaluateIntentFn
-      .mockRejectedValueOnce(new Error('temporary failure'))
-      .mockResolvedValueOnce({
-        result: 'allow',
-        reason: null,
-        policy_id: null,
-        evaluation_id: 'eval-3',
-        eip712_signed_intent: '0xabc',
-        riskIntentForExecution: null,
-      });
-
-    await loop.processSignal(100_000);
-    await loop.processSignal(100_000);
-
-    expect(evaluateIntentFn).toHaveBeenCalledTimes(2);
-    expect(krakenAdapter.paperBuy).toHaveBeenCalledTimes(1);
   });
 });

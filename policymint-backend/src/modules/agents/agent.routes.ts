@@ -7,6 +7,12 @@ import { generateApiKey } from '../../lib/crypto.js';
 import { generateId } from '../../lib/uuid.js';
 import { RegisterAgentSchema } from './agent.schema.js';
 import { createAgentRecord, getAgentById, registerAgent, updateAgentApiKey } from './agent.service.js';
+import {
+  buildCanonicalAgentURI,
+  CANONICAL_AGENT_CAPABILITIES,
+  CANONICAL_AGENT_DESCRIPTION,
+  CANONICAL_AGENT_NAME,
+} from './registration.constants.js';
 
 const AgentIdParamsSchema = z.object({
   id: z.string().uuid()
@@ -16,7 +22,6 @@ const RegistrationProgressParamsSchema = z.object({
   registrationId: z.string().uuid(),
 });
 
-const AGENT_METADATA_TYPE = 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1';
 const REGISTRATION_JOB_TTL_MS = 15 * 60 * 1000;
 
 type RegistrationStatus = 'pending' | 'active' | 'done' | 'failed';
@@ -58,11 +63,6 @@ const agentResponseSelect = {
   vaultClaimedAt: true,
   createdAt: true,
 };
-
-function toDataUriJson(data: Record<string, unknown>) {
-  const payload = Buffer.from(JSON.stringify(data), 'utf8').toString('base64');
-  return `data:application/json;base64,${payload}`;
-}
 
 function createRegistrationJob(id: string): RegistrationJob {
   return {
@@ -153,26 +153,13 @@ async function processRegistrationJob(
     });
 
     if (canRegisterAgentOnChain()) {
-      const frontendUrl = 'https://policymint.vercel.app';
-      const agentURI = input.metadataUri
-        ? input.metadataUri
-        : toDataUriJson({
-            type: AGENT_METADATA_TYPE,
-            name: input.name,
-            description: `${input.strategyType} strategy agent managed by PolicyMint`,
-            services: [
-              {
-                type: 'dashboard',
-                endpoint: frontendUrl,
-              },
-            ],
-            active: true,
-          });
+      const frontendUrl = process.env.POLICYMINT_FRONTEND_URL ?? 'https://your-vercel-frontend-url.vercel.app';
+      const agentURI = buildCanonicalAgentURI(frontendUrl);
 
       const { agentId, txHash } = await registerAgentOnChain({
-        name: input.name,
-        description: `${input.strategyType} strategy agent managed by PolicyMint`,
-        capabilities: ['policy-evaluation', 'risk-routing', 'eip712-signing'],
+        name: CANONICAL_AGENT_NAME,
+        description: CANONICAL_AGENT_DESCRIPTION,
+        capabilities: [...CANONICAL_AGENT_CAPABILITIES],
         agentURI,
       });
 
@@ -429,26 +416,13 @@ export async function agentRoutes(app: FastifyInstance) {
 
     if (canRegisterAgentOnChain()) {
       try {
-        const frontendUrl = 'https://policymint.vercel.app';
-        const agentURI = body.data.metadataUri
-          ? body.data.metadataUri
-          : toDataUriJson({
-              type: AGENT_METADATA_TYPE,
-              name: body.data.name,
-              description: `${body.data.strategyType} strategy agent managed by PolicyMint`,
-              services: [
-                {
-                  type: 'dashboard',
-                  endpoint: frontendUrl,
-                },
-              ],
-              active: true,
-            });
+        const frontendUrl = process.env.POLICYMINT_FRONTEND_URL ?? 'https://your-vercel-frontend-url.vercel.app';
+        const agentURI = buildCanonicalAgentURI(frontendUrl);
 
         const { agentId, txHash } = await registerAgentOnChain({
-          name: body.data.name,
-          description: `${body.data.strategyType} strategy agent managed by PolicyMint`,
-          capabilities: ['policy-evaluation', 'risk-routing', 'eip712-signing'],
+          name: CANONICAL_AGENT_NAME,
+          description: CANONICAL_AGENT_DESCRIPTION,
+          capabilities: [...CANONICAL_AGENT_CAPABILITIES],
           agentURI,
         });
 

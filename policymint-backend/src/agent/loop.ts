@@ -1,48 +1,40 @@
 import { env } from '../config/env.js';
 import { logger as sharedLogger } from '../lib/logger.js';
+import { prisma } from '../db/client.js';
 import { evaluateIntent } from '../modules/policy-engine/evaluate.service.js';
 import type { EvaluateIntentInput } from '../modules/policy-engine/evaluate.schema.js';
-import { KrakenAdapter } from '../exchange/kraken.js';
-import { KrakenWebSocket } from '../strategy/kraken-ws.js';
-import { MomentumStrategy } from '../strategy/momentum.strategy.js';
-import type { IStrategy } from '../strategy/strategy.interface.js';
-
-const MIN_BTC_VOLUME = 0.0001;
+import { PRISMAPIError, PRISMSignalProvider } from '../strategy/prism-signal-provider.js';
+import type { SignalProvider } from '../strategy/signal-provider.interface.js';
+import { computePositionSizing } from '../strategy/position-sizing.js';
+import { captureErrorToSentry } from '../lib/telemetry.js';
 
 type EvaluateIntentResponse = Awaited<ReturnType<typeof evaluateIntent>>;
 type EvaluateIntentFn = (intent: EvaluateIntentInput) => Promise<EvaluateIntentResponse>;
 
-interface PriceFeed {
-  connect(): Promise<void>;
-  disconnect(): void;
-}
-
 interface StrategyLoopOptions {
-  strategy?: IStrategy;
-  krakenAdapter?: KrakenAdapter;
+  signalProvider?: SignalProvider;
   evaluateIntentFn?: EvaluateIntentFn;
-  createPriceFeed?: (onPrice: (price: number) => void) => PriceFeed;
   logger?: typeof sharedLogger;
+  targetAsset?: string;
 }
 
 export class StrategyLoop {
-  private readonly strategy: IStrategy;
-  private readonly krakenAdapter: KrakenAdapter;
+  private readonly signalProvider: SignalProvider;
   private readonly evaluateIntentFn: EvaluateIntentFn;
   private readonly logger: typeof sharedLogger;
-  private readonly priceFeed: PriceFeed;
+  private readonly targetAsset: string;
 
+  private intervalHandle: NodeJS.Timeout | null = null;
   private started = false;
-  private isProcessing = false;
+  private isTickRunning = false;
+  private consecutivePrismFailures = 0;
+  private prismPaused = false;
 
   constructor(options: StrategyLoopOptions = {}) {
-    this.strategy = options.strategy ?? new MomentumStrategy();
-    this.krakenAdapter = options.krakenAdapter ?? new KrakenAdapter();
+    this.signalProvider = options.signalProvider ?? new PRISMSignalProvider();
     this.evaluateIntentFn = options.evaluateIntentFn ?? evaluateIntent;
     this.logger = options.logger ?? sharedLogger;
-    this.priceFeed = options.createPriceFeed
-      ? options.createPriceFeed((price) => this.onPrice(price))
-      : new KrakenWebSocket((price) => this.onPrice(price));
+    this.targetAsset = (options.targetAsset ?? 'BTC').toUpperCase();
   }
 
   async start(): Promise<void> {
@@ -56,19 +48,12 @@ export class StrategyLoop {
     }
 
     this.started = true;
+    this.intervalHandle = setInterval(() => {
+      void this.tick();
+    }, env.STRATEGY_TICK_INTERVAL_MS);
 
-    const initResult = await this.krakenAdapter.paperInit();
-    if (!initResult.success) {
-      this.logger.warn({
-        event: 'PAPER_INIT_FAILED',
-        stderr: initResult.stderr,
-        exitCode: initResult.exitCode,
-        timedOut: initResult.timedOut,
-      }, 'Kraken paper account initialization failed; continuing');
-    }
-
-    await this.priceFeed.connect();
-    this.logger.info({ event: 'STRATEGY_LOOP_STARTED' }, 'Strategy loop started');
+    void this.tick();
+    this.logger.info({ event: 'STRATEGY_LOOP_STARTED', tick_interval_ms: env.STRATEGY_TICK_INTERVAL_MS }, 'PRISM strategy interval loop started');
   }
 
   async stop(): Promise<void> {
@@ -77,40 +62,72 @@ export class StrategyLoop {
     }
 
     this.started = false;
-    this.priceFeed.disconnect();
-    this.krakenAdapter.cleanup();
-    this.strategy.reset();
+
+    if (this.intervalHandle) {
+      clearInterval(this.intervalHandle);
+      this.intervalHandle = null;
+    }
+
     this.logger.info({ event: 'STRATEGY_LOOP_STOPPED' }, 'Strategy loop stopped');
   }
 
-  async processSignal(price: number): Promise<void> {
+  async tick(): Promise<void> {
     try {
-      if (!this.started) {
+      if (!this.started || this.isTickRunning) {
         return;
       }
 
-      const signal = this.strategy.onPrice(price);
+      this.isTickRunning = true;
 
-      if (signal.action === 'hold') {
+      if (!env.AGENT_ID) {
         return;
       }
 
-      const btcVolume = this.floorToSixDecimals(signal.amountUsd / price);
-      if (btcVolume < MIN_BTC_VOLUME) {
-        this.logger.info({
-          event: 'BELOW_MINIMUM_VOLUME',
-          pair: signal.pair,
-          amountUsd: signal.amountUsd,
-          price,
-          btcVolume,
-        }, 'Skipping trade below Kraken BTC minimum volume');
+      const agent = await prisma.agent.findUnique({
+        where: { id: env.AGENT_ID },
+        select: {
+          id: true,
+          isActive: true,
+          erc8004TokenId: true,
+        },
+      });
+
+      if (!agent?.isActive || !agent.erc8004TokenId) {
+        this.logger.warn({ event: 'STRATEGY_AGENT_INACTIVE_OR_UNREGISTERED', agent_id: env.AGENT_ID }, 'Skipping tick: agent inactive or not registered on-chain');
         return;
       }
+
+      const canonicalSymbol = await this.signalProvider.resolveSymbol(this.targetAsset);
+      const signal = await this.signalProvider.getSignal(canonicalSymbol);
+
+      this.consecutivePrismFailures = 0;
+      if (this.prismPaused) {
+        this.prismPaused = false;
+        this.logger.info({ event: 'PRISM_RESUMED', symbol: canonicalSymbol }, 'PRISM recovered; strategy loop resumed');
+      }
+
+      if (signal.direction === 'neutral') {
+        this.logger.info({ event: 'PRISM_NEUTRAL', symbol: canonicalSymbol }, 'PRISM signal neutral, skipping tick');
+        return;
+      }
+
+      if (signal.confidence < 0.6) {
+        this.logger.info({ event: 'PRISM_LOW_CONFIDENCE', symbol: canonicalSymbol, confidence: signal.confidence }, 'PRISM signal low confidence, skipping tick');
+        return;
+      }
+
+      const risk = await this.signalProvider.getRisk(canonicalSymbol);
+      const position = computePositionSizing({
+        spendCapPerTxUsd: env.STRATEGY_TRADE_AMOUNT_USD,
+        drawdownRiskScore: risk.drawdownRiskScore,
+        confidence: signal.confidence,
+      });
 
       const evaluation = await this.evaluateIntentFn(this.toTradeIntent({
-        signalAction: signal.action,
-        signalReason: signal.reason,
-        btcVolume,
+        signalAction: signal.direction,
+        signalReason: `prism_confidence=${signal.confidence}`,
+        pair: canonicalSymbol,
+        amountUsdScaled: position.amountUsdScaled,
       }));
 
       if (evaluation.result === 'block') {
@@ -122,63 +139,70 @@ export class StrategyLoop {
         return;
       }
 
-      if (!this.started) {
+      this.logger.info({
+        event: 'EVALUATION_ALLOWED',
+        pair: canonicalSymbol,
+        amount_usd_scaled: position.amountUsdScaled.toString(),
+        evaluation_id: evaluation.evaluation_id,
+      }, 'Evaluation returned allow; execution continues in policy pipeline');
+    } catch (error) {
+      if (error instanceof PRISMAPIError) {
+        this.consecutivePrismFailures += 1;
+
+        this.logger.error(
+          {
+            event: 'PRISM_API_ERROR',
+            failures: this.consecutivePrismFailures,
+            endpoint: error.endpoint,
+            status: error.statusCode,
+            message: error.message,
+          },
+          'PRISM API error during strategy tick',
+        );
+
+        if (this.consecutivePrismFailures > 3) {
+          this.prismPaused = true;
+          this.logger.error({ event: 'PRISM_PAUSED', failures: this.consecutivePrismFailures }, 'PRISM outage threshold reached; loop paused until successful signal fetch');
+          await captureErrorToSentry({
+            error,
+            tags: { stage: 'prism_outage_pause' },
+            context: {
+              failures: this.consecutivePrismFailures,
+              endpoint: error.endpoint,
+            },
+          });
+        }
+
         return;
       }
 
-      const cliPair = signal.pair.replace('/', '');
-      const execution =
-        signal.action === 'buy'
-          ? await this.krakenAdapter.paperBuy(cliPair, btcVolume)
-          : await this.krakenAdapter.paperSell(cliPair, btcVolume);
-
-      this.logger.info({
-        event: 'TRADE_EXECUTED',
-        success: execution.success,
-        pair: signal.pair,
-        volume: btcVolume,
-        price,
-        evaluation_id: evaluation.evaluation_id,
-      }, 'Paper trade execution completed');
-    } catch (error) {
       this.logger.error({ err: error }, 'Strategy loop processing error');
+      await captureErrorToSentry({
+        error,
+        tags: { stage: 'strategy_loop' },
+      });
+    } finally {
+      this.isTickRunning = false;
     }
-  }
-
-  private onPrice(price: number): void {
-    if (this.isProcessing) {
-      return;
-    }
-
-    this.isProcessing = true;
-    void this.processSignal(price).finally(() => {
-      this.isProcessing = false;
-    });
-  }
-
-  private floorToSixDecimals(value: number): number {
-    return Math.floor(value * 1_000_000) / 1_000_000;
   }
 
   private toTradeIntent(input: {
     signalAction: 'buy' | 'sell';
     signalReason: string;
-    btcVolume: number;
+    pair: string;
+    amountUsdScaled: bigint;
   }): EvaluateIntentInput {
     const agentId = env.AGENT_ID;
     if (!agentId) {
       throw new Error('AGENT_ID is not configured');
     }
 
-    const btcMicro = Math.round(input.btcVolume * 1_000_000);
-    const amountWei = (BigInt(btcMicro) * 1_000_000_000_000n).toString();
-
     return {
       agent_id: agentId,
       action_type: 'trade',
       venue: 'kraken-spot',
-      amount: amountWei,
-      token_in: 'BTC',
+      amount: input.amountUsdScaled.toString(),
+      token_in: 'USDC',
       token_out: 'USD',
       eip712_domain: {
         name: 'PolicyMint',
@@ -187,9 +211,8 @@ export class StrategyLoop {
         verifyingContract: env.RISK_ROUTER_ADDRESS,
       },
       params: {
-        pair: 'BTC/USD',
+        pair: input.pair,
         side: input.signalAction,
-        btc_volume: input.btcVolume,
         signal_reason: input.signalReason,
       },
     };

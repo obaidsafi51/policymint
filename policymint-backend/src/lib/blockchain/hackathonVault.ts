@@ -31,7 +31,16 @@ export async function claimHackathonAllocation(agentId: bigint): Promise<`0x${st
     throw new Error(`HackathonVault.claimAllocation() reverted for agentId=${agentId}. tx: ${txHash}`);
   }
 
-  logger.info({ contract: 'HackathonVault', txHash, agentId: agentId.toString() }, 'claimAllocation confirmed');
+  logger.info(
+    {
+      contract: 'HackathonVault',
+      txHash,
+      agentId: agentId.toString(),
+      blockNumber: receipt.blockNumber?.toString() ?? 'unknown',
+      gasUsed: receipt.gasUsed?.toString() ?? 'unknown',
+    },
+    'claimAllocation confirmed',
+  );
 
   return txHash;
 }

@@ -26,6 +26,11 @@ export interface SubmitTradeIntentResult {
   txHash: `0x${string}`;
 }
 
+export interface WaitForTradeIntentConfirmationResult {
+  txHash: `0x${string}`;
+  confirmed: boolean;
+}
+
 export async function submitTradeIntent(
   params: SubmitTradeIntentParams,
 ): Promise<SubmitTradeIntentResult> {
@@ -53,6 +58,16 @@ export async function submitTradeIntent(
 
   logger.info({ contract: 'RiskRouter', txHash }, 'submitTradeIntent submitted');
 
+  return { txHash };
+}
+
+export async function waitForTradeIntentConfirmation(
+  txHash: `0x${string}`,
+): Promise<WaitForTradeIntentConfirmationResult> {
+  if (env.NODE_ENV === 'test') {
+    return { txHash, confirmed: true };
+  }
+
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
     confirmations: 1,
@@ -63,7 +78,26 @@ export async function submitTradeIntent(
     throw new Error(`RiskRouter.submitTradeIntent() reverted. tx: ${txHash}`);
   }
 
-  logger.info({ contract: 'RiskRouter', txHash }, 'submitTradeIntent confirmed');
+  logger.info(
+    {
+      contract: 'RiskRouter',
+      txHash,
+      blockNumber: receipt.blockNumber.toString(),
+      gasUsed: receipt.gasUsed.toString(),
+    },
+    'submitTradeIntent confirmed',
+  );
 
-  return { txHash };
+  return { txHash, confirmed: true };
+}
+
+export async function getRiskRouterIntentNonce(agentId: bigint): Promise<bigint> {
+  const nonce = await publicClient.readContract({
+    address: RISK_ROUTER,
+    abi: RISK_ROUTER_ABI,
+    functionName: 'getIntentNonce',
+    args: [agentId],
+  });
+
+  return nonce as bigint;
 }

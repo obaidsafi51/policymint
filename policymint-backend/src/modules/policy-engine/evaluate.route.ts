@@ -15,14 +15,25 @@ import {
   FeedbackType,
   emitReputationSignal,
 } from '../../lib/blockchain/reputationRegistry.js';
-import { submitTradeIntent } from '../../lib/blockchain/riskRouter.js';
+import { submitTradeIntent, waitForTradeIntentConfirmation } from '../../lib/blockchain/riskRouter.js';
+import { captureErrorToSentry } from '../../lib/telemetry.js';
 
 const API_KEY_PREFIX = 'pm_live_';
 const PREFIX_LOOKUP_LENGTH = API_KEY_PREFIX.length + 8;
 const RATE_LIMIT_TIME_WINDOW = env.NODE_ENV === 'test' ? '1 minute' : '1 second';
 type FeedbackTypeValue = (typeof FeedbackType)[keyof typeof FeedbackType];
 type ExecutionState = 'confirmed' | 'unconfirmed' | 'not-applicable';
-type ExecutionErrorTag = 'execution_reverted' | 'execution_timeout' | 'rpc_error' | 'signing_error';
+type ExecutionErrorTag =
+  | 'execution_reverted'
+  | 'execution_timeout'
+  | 'rpc_error'
+  | 'signing_error'
+  | 'nonce_persist_failed';
+const REPUTATION_MAX_RETRIES = 3;
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function classifyExecutionError(error: unknown): ExecutionErrorTag {
   const message = error instanceof Error ? error.message.toLowerCase() : '';
@@ -37,6 +48,10 @@ function classifyExecutionError(error: unknown): ExecutionErrorTag {
 
   if (message.includes('rpc') || message.includes('http') || message.includes('network')) {
     return 'rpc_error';
+  }
+
+  if (message.includes('nonce') || message.includes('persist')) {
+    return 'nonce_persist_failed';
   }
 
   return 'execution_reverted';
@@ -68,7 +83,7 @@ function resolveFeedback(input: {
     if (input.executionState === 'confirmed') {
       return {
         score: 80,
-        feedbackType: FeedbackType.TRADE_EXECUTION,
+        feedbackType: FeedbackType.POSITIVE,
         comment: 'Trade executed within policy bounds',
         signalType: SignalType.POSITIVE,
       };
@@ -76,8 +91,8 @@ function resolveFeedback(input: {
 
     return {
       score: 50,
-      feedbackType: FeedbackType.TRADE_EXECUTION,
-      comment: 'Trade allowed but execution failed or remained unconfirmed',
+      feedbackType: FeedbackType.NEUTRAL,
+      comment: 'Trade allowed but execution failed',
       signalType: SignalType.POSITIVE,
     };
   }
@@ -87,7 +102,7 @@ function resolveFeedback(input: {
   if (normalized.includes('riskrouter') || normalized.includes('hard limit')) {
     return {
       score: 10,
-      feedbackType: FeedbackType.RISK_MANAGEMENT,
+      feedbackType: FeedbackType.NEGATIVE,
       comment: `Trade blocked: RiskRouter hard limit exceeded (${reason})`,
       signalType: SignalType.NEGATIVE,
     };
@@ -95,10 +110,31 @@ function resolveFeedback(input: {
 
   return {
     score: 20,
-    feedbackType: FeedbackType.RISK_MANAGEMENT,
+    feedbackType: FeedbackType.NEGATIVE,
     comment: `Trade blocked: ${reason}`,
     signalType: SignalType.NEGATIVE,
   };
+}
+
+async function logReputationAttempt(input: {
+  evaluationId: string;
+  agentId: string;
+  attempt: number;
+  status: 'attempt' | 'success' | 'failed';
+  txHash?: string;
+  errorMessage?: string;
+}) {
+  await prisma.$executeRaw`
+    INSERT INTO reputation_log (evaluation_id, agent_id, attempt, status, tx_hash, error_message)
+    VALUES (
+      ${input.evaluationId}::uuid,
+      ${input.agentId}::uuid,
+      ${input.attempt},
+      ${input.status},
+      ${input.txHash ?? null},
+      ${input.errorMessage ?? null}
+    )
+  `;
 }
 
 function toOutcomeRef(evaluationId: string): `0x${string}` {
@@ -223,72 +259,157 @@ export async function evaluateRoutes(app: FastifyInstance) {
           let executionNote = '';
 
           if (response.result === 'allow' && riskIntentForExecution) {
+            const pendingValidation = await postValidationRecord({
+              agentId: BigInt(agent.erc8004TokenId),
+              evaluationId: response.evaluation_id,
+              score: resolveAttestationScore({
+                result: response.result,
+                reason: response.reason,
+                executionState: 'unconfirmed',
+              }),
+              notes: 'Policy evaluation allow; execution submitted/unconfirmed',
+              checkpointData: {
+                action_type: body.data.action_type,
+                venue: body.data.venue,
+                amount: body.data.amount,
+                timestamp: Math.floor(Date.now() / 1_000),
+              },
+            });
+
+            await prisma.validationRecord.create({
+              data: {
+                evaluationId: response.evaluation_id,
+                registryType: RegistryType.ERC8004,
+                txHash: pendingValidation.txHash,
+                blockNumber: pendingValidation.blockNumber,
+                outcomeRef: toOutcomeRef(response.evaluation_id),
+                strategyCheckpointHash: pendingValidation.checkpointHash,
+                emittedAt: new Date(),
+                confirmedAt: new Date(),
+                agentTokenId: agent.erc8004TokenId,
+              },
+            } as never);
+
+            await prisma.intentEvaluation.update({
+              where: { id: response.evaluation_id },
+              data: {
+                validationTxHash: pendingValidation.txHash,
+                emittedAt: new Date(),
+              },
+            });
+
             try {
               const execution = await submitTradeIntent({
                 intent: riskIntentForExecution,
                 signature: response.eip712_signed_intent as `0x${string}`,
               });
 
+              const nextNonce = riskIntentForExecution.nonce;
+              const previousNonce = nextNonce - 1n;
+
+              await prisma.$transaction(async tx => {
+                const updatedCount = await tx.$executeRaw`
+                  UPDATE agents
+                  SET last_nonce = ${nextNonce}
+                  WHERE id = ${body.data.agent_id}::uuid
+                    AND last_nonce = ${previousNonce}
+                `;
+
+                if (Number(updatedCount) !== 1) {
+                  throw new Error('Failed to persist nonce increment after RiskRouter submission');
+                }
+
+                await tx.intentEvaluation.update({
+                  where: { id: response.evaluation_id },
+                  data: {
+                    cycleId: execution.txHash,
+                  },
+                });
+              });
+
+              await waitForTradeIntentConfirmation(execution.txHash);
+
               executionState = 'confirmed';
               executionNote = ' execution_confirmed';
-            } catch (executionError) {
-              executionState = 'unconfirmed';
-              executionNote = ` ${classifyExecutionError(executionError)}`;
-              app.log.error({ err: executionError, evaluation_id: response.evaluation_id }, 'RiskRouter execution failed');
-            }
-          }
 
-          const validation = await postValidationRecord({
-            agentId: BigInt(agent.erc8004TokenId),
-            evaluationId: response.evaluation_id,
-            score: resolveAttestationScore({
-              result: response.result,
-              reason: response.reason,
-              executionState,
-            }),
-            notes:
-              response.result === 'allow'
-                ? `Policy evaluation allow; ${executionState === 'confirmed' ? 'execution confirmed on-chain' : 'execution pending/unconfirmed'};${executionNote}`
-                : `Policy block: ${response.reason ?? 'blocked by policy'}`,
-            checkpointData: {
-              action_type: body.data.action_type,
-              venue: body.data.venue,
-              amount: body.data.amount,
-              timestamp: Math.floor(Date.now() / 1_000),
-            },
-          });
-
-          await prisma.$transaction(async tx => {
-            await tx.intentEvaluation.update({
-              where: { id: response.evaluation_id },
-              data: {
-                validationTxHash: validation.txHash,
-                emittedAt: new Date(),
-              },
-            });
-
-            const existingValidationRecord = await tx.validationRecord.findFirst({
-              where: {
+              const confirmedValidation = await postValidationRecord({
+                agentId: BigInt(agent.erc8004TokenId),
                 evaluationId: response.evaluation_id,
-                registryType: RegistryType.ERC8004,
-              },
-              select: { id: true },
-            });
+                score: resolveAttestationScore({
+                  result: response.result,
+                  reason: response.reason,
+                  executionState,
+                }),
+                notes: 'Policy evaluation allow; execution confirmed on-chain',
+                checkpointData: {
+                  action_type: body.data.action_type,
+                  venue: body.data.venue,
+                  amount: body.data.amount,
+                  timestamp: Math.floor(Date.now() / 1_000),
+                },
+              });
 
-            if (existingValidationRecord) {
-              await tx.validationRecord.update({
-                where: { id: existingValidationRecord.id },
+              await prisma.validationRecord.create({
                 data: {
-                  txHash: validation.txHash,
-                  blockNumber: validation.blockNumber,
+                  evaluationId: response.evaluation_id,
+                  registryType: RegistryType.ERC8004,
+                  txHash: confirmedValidation.txHash,
+                  blockNumber: confirmedValidation.blockNumber,
                   outcomeRef: toOutcomeRef(response.evaluation_id),
-                  strategyCheckpointHash: validation.checkpointHash,
+                  strategyCheckpointHash: confirmedValidation.checkpointHash,
                   emittedAt: new Date(),
                   confirmedAt: new Date(),
                   agentTokenId: agent.erc8004TokenId,
                 },
               } as never);
-            } else {
+
+              await prisma.intentEvaluation.update({
+                where: { id: response.evaluation_id },
+                data: {
+                  validationTxHash: confirmedValidation.txHash,
+                  emittedAt: new Date(),
+                },
+              });
+            } catch (executionError) {
+              executionState = 'unconfirmed';
+              executionNote = ` ${classifyExecutionError(executionError)}`;
+              app.log.error({ err: executionError, evaluation_id: response.evaluation_id }, 'RiskRouter execution failed');
+              await captureErrorToSentry({
+                error: executionError,
+                tags: { stage: 'riskrouter_execution' },
+                context: {
+                  evaluation_id: response.evaluation_id,
+                  agent_id: body.data.agent_id,
+                },
+              });
+            }
+          } else {
+            const validation = await postValidationRecord({
+              agentId: BigInt(agent.erc8004TokenId),
+              evaluationId: response.evaluation_id,
+              score: resolveAttestationScore({
+                result: response.result,
+                reason: response.reason,
+                executionState,
+              }),
+              notes: `Policy block: ${response.reason ?? 'blocked by policy'}${executionNote}`,
+              checkpointData: {
+                action_type: body.data.action_type,
+                venue: body.data.venue,
+                amount: body.data.amount,
+                timestamp: Math.floor(Date.now() / 1_000),
+              },
+            });
+
+            await prisma.$transaction(async tx => {
+              await tx.intentEvaluation.update({
+                where: { id: response.evaluation_id },
+                data: {
+                  validationTxHash: validation.txHash,
+                  emittedAt: new Date(),
+                },
+              });
+
               await tx.validationRecord.create({
                 data: {
                   evaluationId: response.evaluation_id,
@@ -302,8 +423,8 @@ export async function evaluateRoutes(app: FastifyInstance) {
                   agentTokenId: agent.erc8004TokenId,
                 },
               } as never);
-            }
-          });
+            });
+          }
 
           if (!canEmitReputationSignalOnChain()) {
             app.log.warn({ evaluation_id: response.evaluation_id }, 'ReputationRegistry not configured');
@@ -327,13 +448,71 @@ export async function evaluateRoutes(app: FastifyInstance) {
             executionState,
           });
 
-          const reputationTxHash = await emitReputationSignal({
-            agentId: BigInt(agent.erc8004TokenId),
-            score: feedback.score,
-            feedbackType: feedback.feedbackType,
-            outcomeRef: toOutcomeRef(response.evaluation_id),
-            comment: feedback.comment,
-          });
+          let reputationTxHash: `0x${string}` | null = null;
+          let reputationFailureMessage: string | null = null;
+
+          for (let attempt = 1; attempt <= REPUTATION_MAX_RETRIES; attempt += 1) {
+            try {
+              await logReputationAttempt({
+                evaluationId: response.evaluation_id,
+                agentId: body.data.agent_id,
+                attempt,
+                status: 'attempt',
+              });
+
+              reputationTxHash = await emitReputationSignal({
+                agentId: BigInt(agent.erc8004TokenId),
+                score: feedback.score,
+                feedbackType: feedback.feedbackType,
+                outcomeRef: toOutcomeRef(response.evaluation_id),
+                comment: feedback.comment,
+              });
+
+              await logReputationAttempt({
+                evaluationId: response.evaluation_id,
+                agentId: body.data.agent_id,
+                attempt,
+                status: 'success',
+                txHash: reputationTxHash,
+              });
+
+              break;
+            } catch (reputationErr) {
+              const errorMessage = reputationErr instanceof Error ? reputationErr.message : 'Unknown reputation emission error';
+              reputationFailureMessage = errorMessage;
+
+              await logReputationAttempt({
+                evaluationId: response.evaluation_id,
+                agentId: body.data.agent_id,
+                attempt,
+                status: 'failed',
+                errorMessage,
+              });
+
+              if (attempt < REPUTATION_MAX_RETRIES) {
+                const backoffMs = 250 * 2 ** (attempt - 1);
+                await sleep(backoffMs);
+              }
+            }
+          }
+
+          if (!reputationTxHash) {
+            app.log.error({
+              evaluation_id: response.evaluation_id,
+              error: reputationFailureMessage,
+            }, 'Reputation emission failed after retries');
+
+            await captureErrorToSentry({
+              error: reputationFailureMessage ?? 'Reputation emission failed after retries',
+              tags: { stage: 'reputation_emission' },
+              context: {
+                evaluation_id: response.evaluation_id,
+                agent_id: body.data.agent_id,
+              },
+            });
+
+            return;
+          }
 
           await prisma.reputationSignal.create({
             data: {
@@ -347,6 +526,14 @@ export async function evaluateRoutes(app: FastifyInstance) {
           });
         } catch (err) {
           app.log.error({ err, evaluation_id: response.evaluation_id }, 'Background on-chain emission failed');
+          await captureErrorToSentry({
+            error: err,
+            tags: { stage: 'background_emission' },
+            context: {
+              evaluation_id: response.evaluation_id,
+              agent_id: body.data.agent_id,
+            },
+          });
         }
       });
 
@@ -357,6 +544,13 @@ export async function evaluateRoutes(app: FastifyInstance) {
       }
 
       request.log.error({ err: error }, 'Policy evaluation failed unexpectedly');
+      await captureErrorToSentry({
+        error,
+        tags: { stage: 'evaluate_request' },
+        context: {
+          agent_id: body.data.agent_id,
+        },
+      });
       return reply.status(500).send({ error: 'Internal evaluation error', evaluation_id: null });
     }
   });

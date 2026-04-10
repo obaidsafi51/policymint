@@ -20,7 +20,6 @@ interface EvaluateIntentResponse {
 
 const MAX_ALLOWED_TRADES_PER_HOUR = 8;
 const MAX_ALLOWED_SLIPPAGE_BPS = 200;
-const MAX_NONCE_ALLOCATION_ATTEMPTS = 2;
 
 function fallbackRiskIntent(intent: EvaluateIntentInput) {
   return {
@@ -224,64 +223,25 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
   };
 
   if (result === 'allow' && agent.erc8004TokenId) {
-    let previousNonce = agent.lastNonce;
-    let allocationSucceeded = false;
+    const currentNonce = typeof agent.lastNonce === 'bigint' ? agent.lastNonce : BigInt(agent.lastNonce);
+    const candidateNonce = currentNonce + 1n;
 
-    for (let attempt = 0; attempt < MAX_NONCE_ALLOCATION_ATTEMPTS; attempt += 1) {
-      const candidateNonce = previousNonce + 1;
-      const candidateRiskIntent = await mapToRiskRouterIntent({
-        intent,
-        erc8004TokenId: agent.erc8004TokenId,
-        agentWalletAddress: agentAccount.address,
-        nonce: candidateNonce,
-        defaultMaxSlippageBps: 50,
-      });
+    riskIntentForExecution = await mapToRiskRouterIntent({
+      intent,
+      erc8004TokenId: agent.erc8004TokenId,
+      agentWalletAddress: agentAccount.address,
+      nonce: candidateNonce,
+      defaultMaxSlippageBps: 50,
+    });
 
-      const candidateSignature = await signEvaluatedIntent({ intent: candidateRiskIntent });
+    eip712SignedIntent = await signEvaluatedIntent({ intent: riskIntentForExecution });
 
-      const committed = await prisma.$transaction(async tx => {
-        const updateResult = await tx.agent.updateMany({
-          where: {
-            id: intent.agent_id,
-            lastNonce: previousNonce,
-          },
-          data: {
-            lastNonce: candidateNonce,
-          },
-        });
-
-        if (updateResult.count !== 1) {
-          return false;
-        }
-
-        await tx.intentEvaluation.create({
-          data: {
-            ...baseEvaluationData,
-            eip712SignedIntent: candidateSignature,
-          },
-        });
-
-        return true;
-      });
-
-      if (committed) {
-        riskIntentForExecution = candidateRiskIntent;
-        eip712SignedIntent = candidateSignature;
-        allocationSucceeded = true;
-        break;
-      }
-
-      const refreshedAgent = await prisma.agent.findUnique({
-        where: { id: intent.agent_id },
-        select: { lastNonce: true },
-      });
-
-      previousNonce = refreshedAgent?.lastNonce ?? previousNonce;
-    }
-
-    if (!allocationSucceeded) {
-      throw new EvaluationServiceError('Failed to allocate nonce for agent due to concurrent updates', 409);
-    }
+    await prisma.intentEvaluation.create({
+      data: {
+        ...baseEvaluationData,
+        eip712SignedIntent,
+      },
+    });
   } else {
     eip712SignedIntent = await signEvaluatedIntent({ intent: fallbackRiskIntent(intent) });
 

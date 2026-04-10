@@ -1,4 +1,5 @@
 import { env } from '../../config/env.js';
+import { publicClient } from '../../lib/blockchain/client.js';
 import type { EvaluateIntentInput } from './evaluate.schema.js';
 
 export interface RiskRouterTradeIntent {
@@ -47,17 +48,17 @@ function normalizeSymbol(symbol: string): string {
 }
 
 function mapAction(intent: EvaluateIntentInput): string {
+  if (intent.action_type !== 'trade') {
+    throw new Error(`Unsupported action_type for RiskRouter: ${intent.action_type}`);
+  }
+
   const side = typeof intent.params?.side === 'string' ? intent.params.side.toLowerCase() : null;
 
   if (side === 'buy' || side === 'sell') {
     return side.toUpperCase();
   }
 
-  if (intent.action_type === 'trade' || intent.action_type === 'swap') {
-    return 'BUY';
-  }
-
-  return 'SELL';
+  throw new Error('RiskRouter trade intents require params.side as buy or sell');
 }
 
 function toUnitAmount(amountRaw: string, decimals: number): number {
@@ -145,16 +146,26 @@ async function getKrakenUsdPrice(tokenSymbol: string): Promise<number> {
 function resolvePair(tokenIn: string, tokenOut?: string): string {
   const base = normalizeSymbol(tokenIn);
   const quote = normalizeSymbol(tokenOut ?? 'USD');
-  return `${base}${quote}`;
+  return `${base}/${quote}`;
+}
+
+async function getChainDeadline(secondsFromNow: number): Promise<bigint> {
+  if (env.NODE_ENV === 'test') {
+    return BigInt(Math.floor(Date.now() / 1_000) + secondsFromNow);
+  }
+
+  const latestBlock = await publicClient.getBlock({ blockTag: 'latest' });
+  return latestBlock.timestamp + BigInt(secondsFromNow);
 }
 
 export async function mapToRiskRouterIntent(input: {
   intent: EvaluateIntentInput;
   erc8004TokenId: string;
   agentWalletAddress: `0x${string}`;
-  nonce: number;
+  nonce: number | bigint;
   defaultMaxSlippageBps?: number;
 }): Promise<RiskRouterTradeIntent> {
+  const pairFromParams = typeof input.intent.params?.pair === 'string' ? input.intent.params.pair.trim() : '';
   const tokenIn = normalizeSymbol(input.intent.token_in);
   const tokenOut = normalizeSymbol(input.intent.token_out ?? 'USD');
   const decimals = TOKEN_DECIMALS[tokenIn] ?? 18;
@@ -170,14 +181,16 @@ export async function mapToRiskRouterIntent(input: {
     throw new Error(`maxSlippageBps exceeds backend ceiling (${MAX_SLIPPAGE_BPS})`);
   }
 
+  const deadline = await getChainDeadline(300);
+
   return {
     agentId: BigInt(input.erc8004TokenId),
     agentWallet: input.agentWalletAddress,
-    pair: resolvePair(tokenIn, tokenOut),
+    pair: pairFromParams.includes('/') ? pairFromParams.toUpperCase() : resolvePair(tokenIn, tokenOut),
     action: mapAction(input.intent),
     amountUsdScaled,
     maxSlippageBps: BigInt(maxSlippageBps),
     nonce: BigInt(input.nonce),
-    deadline: BigInt(Math.floor(Date.now() / 1_000) + 300),
+    deadline,
   };
 }

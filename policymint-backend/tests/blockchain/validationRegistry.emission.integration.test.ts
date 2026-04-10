@@ -64,7 +64,7 @@ describeDb('ValidationRegistry emission integration', () => {
         chainId: 11155111,
         verifyingContract: '0x0000000000000000000000000000000000000000',
       },
-      params: {},
+      params: { side: 'buy' },
     };
   }
 
@@ -100,10 +100,20 @@ describeDb('ValidationRegistry emission integration', () => {
     expect(body.result).toBe('allow');
 
     await vi.waitFor(() => {
-      expect(postValidationSpy).toHaveBeenCalledTimes(1);
+      expect(postValidationSpy).toHaveBeenCalledTimes(2);
     });
 
-    expect(postValidationSpy).toHaveBeenCalledWith(
+    expect(postValidationSpy).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        agentId: BigInt(42),
+        evaluationId: body.evaluation_id,
+        score: 70,
+      }),
+    );
+
+    expect(postValidationSpy).toHaveBeenNthCalledWith(
+      2,
       expect.objectContaining({
         agentId: BigInt(42),
         evaluationId: body.evaluation_id,

@@ -7,10 +7,9 @@ import { txQueue } from './txQueue.js';
 const REPUTATION_REGISTRY = env.REPUTATION_REGISTRY_ADDRESS as `0x${string}` | undefined;
 
 export const FeedbackType = {
-  TRADE_EXECUTION: 0,
-  RISK_MANAGEMENT: 1,
-  STRATEGY_QUALITY: 2,
-  GENERAL: 3,
+  POSITIVE: 1,
+  NEUTRAL: 2,
+  NEGATIVE: 3,
 } as const;
 
 type FeedbackTypeValue = (typeof FeedbackType)[keyof typeof FeedbackType];
@@ -38,7 +37,7 @@ export async function emitReputationSignal(params: EmitSignalParams): Promise<`0
 
   if (!Object.values(FeedbackType).includes(params.feedbackType)) {
     throw new Error(
-      `ReputationRegistry.submitFeedback() feedbackType must be one of 0,1,2,3. Received ${params.feedbackType}`,
+      `ReputationRegistry.submitFeedback() feedbackType must be one of 1,2,3. Received ${params.feedbackType}`,
     );
   }
 
@@ -81,7 +80,15 @@ export async function emitReputationSignal(params: EmitSignalParams): Promise<`0
     throw new Error(`ReputationRegistry.submitFeedback() reverted. tx: ${txHash}`);
   }
 
-  logger.info({ contract: 'ReputationRegistry', txHash }, 'submitFeedback confirmed');
+  logger.info(
+    {
+      contract: 'ReputationRegistry',
+      txHash,
+      blockNumber: receipt.blockNumber?.toString() ?? 'unknown',
+      gasUsed: receipt.gasUsed?.toString() ?? 'unknown',
+    },
+    'submitFeedback confirmed',
+  );
 
   return txHash;
 }
