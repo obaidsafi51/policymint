@@ -1,62 +1,73 @@
 'use client';
 
-import useSWR from 'swr';
-import { buildApiUrl, hasApiUrl } from '@/lib/api';
-import { fetcher } from '@/lib/fetcher';
-import { mockDrawdown, mockPnl, mockStats } from '@/lib/mockData';
+import { useQuery } from '@tanstack/react-query';
+import { AgentPnlSeriesPoint, ConsoleApiErrorCode } from '@/types';
+import { ConsoleApiError, consoleApiRequest, hasApiUrl } from '@/lib/api';
+import { mockPnl } from '@/lib/mockData';
 
-interface StatsResponse {
-  tradesToday: number;
-  blocksToday: number;
+export type PerformanceWindow = '1h' | '24h' | '7d' | 'competition';
+
+function shouldPoll(): boolean {
+  if (typeof document === 'undefined') {
+    return true;
+  }
+
+  return document.visibilityState === 'visible';
 }
 
-interface PnlPoint {
-  ts: string;
-  pnl: number;
+function mapSeries(points: AgentPnlSeriesPoint[]) {
+  return points.map((point) => ({
+    ts: point.timestamp,
+    pnl: point.cumulative_pnl_usd,
+  }));
 }
 
-interface DrawdownPoint {
-  ts: string;
-  protected: number;
-  baseline: number;
-}
-
-export function usePnL(agentId: string) {
+export function usePnL(agentId: string, window: PerformanceWindow = 'competition') {
   const shouldUseApi = hasApiUrl() && agentId.length > 0;
 
-  const pnl = useSWR<PnlPoint[]>(
-    shouldUseApi ? buildApiUrl(`/v1/agents/${agentId}/pnl?window=competition`) : null,
-    fetcher,
-    { refreshInterval: 10_000 },
-  );
+  const query = useQuery({
+    queryKey: ['agent', agentId, 'pnl', window],
+    enabled: shouldUseApi,
+    queryFn: async () => {
+      const response = await consoleApiRequest<{
+        window: PerformanceWindow;
+        start_at: string;
+        end_at: string;
+        baseline_allocation_usd: number;
+        current_pnl_usd: number;
+        pnl_pct: number;
+        trade_count: number;
+        series: AgentPnlSeriesPoint[];
+      }>(`/v1/agents/${agentId}/pnl?window=${window}`);
 
-  const drawdown = useSWR<DrawdownPoint[]>(
-    shouldUseApi ? buildApiUrl(`/v1/agents/${agentId}/drawdown-comparison`) : null,
-    fetcher,
-    { refreshInterval: 10_000 },
-  );
-
-  const stats = useSWR<StatsResponse>(
-    shouldUseApi ? buildApiUrl(`/v1/agents/${agentId}/stats`) : null,
-    fetcher,
-    { refreshInterval: 10_000 },
-  );
+      return response;
+    },
+    refetchInterval: () => (shouldPoll() ? 30_000 : false),
+    refetchIntervalInBackground: false,
+  });
 
   if (!shouldUseApi) {
     return {
-      pnlData: mockPnl,
-      drawdownData: mockDrawdown,
-      stats: mockStats,
+      series: mockPnl,
+      currentPnl: mockPnl[mockPnl.length - 1]?.pnl ?? 0,
+      tradeCount: 0,
       isLoading: false,
-      error: undefined,
+      isError: false,
+      errorCode: undefined as ConsoleApiErrorCode | undefined,
     };
   }
 
+  const errorCode = query.error instanceof ConsoleApiError ? (query.error.code as ConsoleApiErrorCode) : undefined;
+  const responseData = query.data?.data;
+  const series = responseData ? mapSeries(responseData.series) : [];
+
   return {
-    pnlData: pnl.data ?? [],
-    drawdownData: drawdown.data ?? [],
-    stats: stats.data ?? { tradesToday: 0, blocksToday: 0 },
-    isLoading: pnl.isLoading || drawdown.isLoading || stats.isLoading,
-    error: pnl.error ?? drawdown.error ?? stats.error,
+    series,
+    currentPnl: responseData?.current_pnl_usd ?? 0,
+    tradeCount: responseData?.trade_count ?? 0,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    errorCode,
+    refetch: query.refetch,
   };
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { publicClient } from '@/lib/viem';
 import { RISK_ROUTER_ABI, RISK_ROUTER_ADDRESS } from '@/lib/contracts';
 import { buildApiUrl, hasApiUrl } from '@/lib/api';
@@ -77,6 +78,7 @@ async function simulateOnChain(agentId: string, intent: TradeIntent): Promise<Si
 }
 
 export function useSimulate(agentUuid: string, agentTokenId: string) {
+  const queryClient = useQueryClient();
   const [result, setResult] = useState<SimulateResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +105,7 @@ export function useSimulate(agentUuid: string, agentTokenId: string) {
           latency_ms: Math.round(performance.now() - start),
           checklist: buildChecklist(demo.result, demo.reason ?? null),
         });
+        await queryClient.invalidateQueries({ queryKey: ['agent', agentUuid] });
         return;
       }
 
@@ -135,6 +138,7 @@ export function useSimulate(agentUuid: string, agentTokenId: string) {
         latency_ms: Math.round(performance.now() - start),
         checklist: buildChecklist(policyEngine.result, policyEngine.reason),
       });
+      await queryClient.invalidateQueries({ queryKey: ['agent', agentUuid] });
     } catch (caughtError) {
       const message = caughtError instanceof Error ? caughtError.message : 'Simulation failed';
       setError(message);
