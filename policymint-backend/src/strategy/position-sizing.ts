@@ -18,7 +18,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 export function computePositionSizing(input: PositionSizingInput): PositionSizingResult {
-  const safeCap = clamp(input.spendCapPerTxUsd, MIN_USD_POSITION, MAX_USD_POSITION);
+  const safeCap = clamp(input.spendCapPerTxUsd, 0, MAX_USD_POSITION);
   const drawdownRiskScore = clamp(input.drawdownRiskScore, 0, 1);
   const confidence = clamp(input.confidence, 0, 1);
 
@@ -28,7 +28,8 @@ export function computePositionSizing(input: PositionSizingInput): PositionSizin
     usdAmount = usdAmount * 0.5;
   }
 
-  usdAmount = clamp(usdAmount, MIN_USD_POSITION, MAX_USD_POSITION);
+  const minPosition = safeCap >= MIN_USD_POSITION ? MIN_USD_POSITION : 0;
+  usdAmount = clamp(usdAmount, minPosition, safeCap);
   const scaled = BigInt(Math.round(usdAmount * USD_SCALE));
 
   return {

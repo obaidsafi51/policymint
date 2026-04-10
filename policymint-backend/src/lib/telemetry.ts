@@ -30,7 +30,17 @@ function toErrorPayload(error: unknown): { type: string; value: string; stacktra
 
   return {
     type: 'UnknownError',
-    value: typeof error === 'string' ? error : JSON.stringify(error),
+    value: (() => {
+      if (typeof error === 'string') {
+        return error;
+      }
+
+      try {
+        return JSON.stringify(error);
+      } catch {
+        return String(error);
+      }
+    })(),
   };
 }
 

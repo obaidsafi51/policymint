@@ -18,6 +18,14 @@ interface StrategyLoopOptions {
   targetAsset?: string;
 }
 
+const PRISM_PAUSE_BASE_MS = 15_000;
+const PRISM_PAUSE_MAX_MS = 5 * 60_000;
+
+function getPrismPauseDurationMs(consecutiveFailures: number): number {
+  const exponent = Math.max(0, consecutiveFailures - 4);
+  return Math.min(PRISM_PAUSE_MAX_MS, PRISM_PAUSE_BASE_MS * 2 ** exponent);
+}
+
 export class StrategyLoop {
   private readonly signalProvider: SignalProvider;
   private readonly evaluateIntentFn: EvaluateIntentFn;
@@ -29,6 +37,7 @@ export class StrategyLoop {
   private isTickRunning = false;
   private consecutivePrismFailures = 0;
   private prismPaused = false;
+  private prismPauseUntilMs = 0;
 
   constructor(options: StrategyLoopOptions = {}) {
     this.signalProvider = options.signalProvider ?? new PRISMSignalProvider();
@@ -97,6 +106,15 @@ export class StrategyLoop {
         return;
       }
 
+      if (this.prismPaused) {
+        if (Date.now() < this.prismPauseUntilMs) {
+          this.logger.warn({ event: 'PRISM_PAUSED_SKIP', resume_at_ms: this.prismPauseUntilMs }, 'Skipping PRISM requests while outage backoff is active');
+          return;
+        }
+
+        this.logger.info({ event: 'PRISM_PAUSE_PROBE' }, 'PRISM backoff elapsed; probing for recovery');
+      }
+
       const canonicalSymbol = await this.signalProvider.resolveSymbol(this.targetAsset);
 
       if (this.prismPaused) {
@@ -104,6 +122,7 @@ export class StrategyLoop {
         await this.signalProvider.getSignal(canonicalSymbol);
         this.prismPaused = false;
         this.consecutivePrismFailures = 0;
+        this.prismPauseUntilMs = 0;
         this.logger.info({ event: 'PRISM_RESUMED', symbol: canonicalSymbol }, 'PRISM recovered; strategy loop resumed');
         return;
       }
@@ -178,14 +197,20 @@ export class StrategyLoop {
 
         if (this.consecutivePrismFailures > 3) {
           this.prismPaused = true;
-          this.logger.error(
-            { event: 'PRISM_PAUSED', failures: this.consecutivePrismFailures },
-            'PRISM outage threshold reached; loop paused until successful signal fetch',
-          );
+          this.prismPauseUntilMs = Date.now() + getPrismPauseDurationMs(this.consecutivePrismFailures);
+          this.logger.error({
+            event: 'PRISM_PAUSED',
+            failures: this.consecutivePrismFailures,
+            resume_at_ms: this.prismPauseUntilMs,
+          }, 'PRISM outage threshold reached; loop paused until successful signal fetch');
           await captureErrorToSentry({
             error,
             tags: { stage: 'prism_outage_pause' },
-            context: { failures: this.consecutivePrismFailures, endpoint: error.endpoint },
+            context: {
+              failures: this.consecutivePrismFailures,
+              endpoint: error.endpoint,
+              resume_at_ms: this.prismPauseUntilMs,
+            },
           });
         }
 

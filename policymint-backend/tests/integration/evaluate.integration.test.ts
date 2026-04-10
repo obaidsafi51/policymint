@@ -48,7 +48,7 @@ describeDb('POST /v1/evaluate', () => {
         chainId: 11155111,
         verifyingContract: '0x0000000000000000000000000000000000000000'
       },
-      params: {},
+      params: { side: 'buy' },
       ...overrides
     };
   }

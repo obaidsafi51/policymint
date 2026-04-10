@@ -3,6 +3,7 @@ import { logger } from '../lib/logger.js';
 import type { RiskResult, SignalProvider, SignalResult } from './signal-provider.interface.js';
 
 const RESOLVE_CACHE_TTL_MS = 60 * 60 * 1000;
+const REQUEST_TIMEOUT_MS = 5_000;
 
 type ResolveCacheEntry = {
   symbol: string;
@@ -90,12 +91,27 @@ export class PRISMSignalProvider implements SignalProvider {
 
   private async requestJson(endpoint: string): Promise<Record<string, unknown>> {
     const url = `${this.baseUrl}${endpoint}`;
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: this.authHeader,
-      },
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: this.authHeader,
+        },
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new PRISMAPIError(`PRISM API request timed out after ${REQUEST_TIMEOUT_MS}ms`, 408, endpoint);
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');

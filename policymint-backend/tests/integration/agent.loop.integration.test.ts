@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { StrategyLoop } from '../../src/agent/loop';
+import { PRISMAPIError } from '../../src/strategy/prism-signal-provider';
 
 vi.mock('../../src/db/client.js', () => ({
   prisma: {
@@ -95,5 +96,22 @@ describe('StrategyLoop', () => {
     expect(intentArg?.token_in).toBe('USDC');
     expect(intentArg?.token_out).toBe('USD');
     expect(intentArg?.params).toMatchObject({ side: 'sell', pair: 'BTC/USD' });
+  });
+
+  it('skips PRISM requests while paused backoff is active', async () => {
+    const { loop, signalProvider, evaluateIntentFn } = createLoopHarness();
+    signalProvider.getSignal.mockRejectedValue(new PRISMAPIError('down', 503, '/signals/BTC%2FUSD'));
+
+    (loop as unknown as { started: boolean }).started = true;
+    await loop.tick();
+    await loop.tick();
+    await loop.tick();
+    await loop.tick();
+
+    const pausedResolveCalls = signalProvider.resolveSymbol.mock.calls.length;
+    await loop.tick();
+
+    expect(signalProvider.resolveSymbol.mock.calls.length).toBe(pausedResolveCalls);
+    expect(evaluateIntentFn).not.toHaveBeenCalled();
   });
 });

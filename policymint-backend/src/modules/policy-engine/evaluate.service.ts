@@ -20,6 +20,7 @@ interface EvaluateIntentResponse {
 
 const MAX_ALLOWED_TRADES_PER_HOUR = 8;
 const MAX_ALLOWED_SLIPPAGE_BPS = 200;
+const MAX_NONCE_ALLOCATION_ATTEMPTS = 5;
 
 function fallbackRiskIntent(intent: EvaluateIntentInput) {
   return {
@@ -120,6 +121,16 @@ function getRequestedMaxSlippageBps(intent: EvaluateIntentInput): number | null 
   return Math.floor(raw);
 }
 
+function getTradeSide(intent: EvaluateIntentInput): 'buy' | 'sell' | null {
+  const sideRaw = typeof intent.params?.side === 'string' ? intent.params.side.trim().toLowerCase() : null;
+
+  if (sideRaw === 'buy' || sideRaw === 'sell') {
+    return sideRaw;
+  }
+
+  return null;
+}
+
 export async function evaluateIntent(intent: EvaluateIntentInput): Promise<EvaluateIntentResponse> {
   const agent = await prisma.agent.findUnique({
     where: { id: intent.agent_id },
@@ -206,26 +217,69 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
     validationTxHash: null,
   };
 
-  if (result === 'allow' && agent.erc8004TokenId) {
-    const currentNonce = typeof agent.lastNonce === 'bigint' ? agent.lastNonce : BigInt(agent.lastNonce);
-    const candidateNonce = currentNonce + 1n;
+  if (result === 'allow' && agent.erc8004TokenId && intent.action_type === 'trade') {
+    if (!getTradeSide(intent)) {
+      throw new EvaluationServiceError('Trade intents require params.side as buy or sell', 400);
+    }
 
-    riskIntentForExecution = await mapToRiskRouterIntent({
-      intent,
-      erc8004TokenId: agent.erc8004TokenId,
-      agentWalletAddress: agentAccount.address,
-      nonce: candidateNonce,
-      defaultMaxSlippageBps: 50,
-    });
+    let previousNonce = typeof agent.lastNonce === 'bigint' ? agent.lastNonce : BigInt(agent.lastNonce);
+    let allocationSucceeded = false;
 
-    eip712SignedIntent = await signEvaluatedIntent({ intent: riskIntentForExecution });
+    for (let attempt = 0; attempt < MAX_NONCE_ALLOCATION_ATTEMPTS; attempt += 1) {
+      const candidateNonce = previousNonce + 1n;
+      const candidateRiskIntent = await mapToRiskRouterIntent({
+        intent,
+        erc8004TokenId: agent.erc8004TokenId,
+        agentWalletAddress: agentAccount.address,
+        nonce: candidateNonce,
+        defaultMaxSlippageBps: 50,
+      });
 
-    await prisma.intentEvaluation.create({
-      data: {
-        ...baseEvaluationData,
-        eip712SignedIntent,
-      },
-    });
+      const candidateSignature = await signEvaluatedIntent({ intent: candidateRiskIntent });
+
+      const committed = await prisma.$transaction(async tx => {
+        const updateResult = await tx.agent.updateMany({
+          where: {
+            id: intent.agent_id,
+            lastNonce: previousNonce,
+          },
+          data: {
+            lastNonce: candidateNonce,
+          },
+        });
+
+        if (updateResult.count !== 1) {
+          return false;
+        }
+
+        await tx.intentEvaluation.create({
+          data: {
+            ...baseEvaluationData,
+            eip712SignedIntent: candidateSignature,
+          },
+        });
+
+        return true;
+      });
+
+      if (committed) {
+        riskIntentForExecution = candidateRiskIntent;
+        eip712SignedIntent = candidateSignature;
+        allocationSucceeded = true;
+        break;
+      }
+
+      const refreshedAgent = await prisma.agent.findUnique({
+        where: { id: intent.agent_id },
+        select: { lastNonce: true },
+      });
+
+      previousNonce = refreshedAgent?.lastNonce ?? previousNonce;
+    }
+
+    if (!allocationSucceeded) {
+      throw new EvaluationServiceError('Failed to allocate nonce for agent due to concurrent updates', 409);
+    }
   } else {
     eip712SignedIntent = await signEvaluatedIntent({ intent: fallbackRiskIntent(intent) });
 

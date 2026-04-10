@@ -1,8 +1,3 @@
-/*
-  Warnings:
-
-  - You are about to drop the `reputation_log` table. If the table is not empty, all the data it contains will be lost.
-
-*/
--- DropTable
-DROP TABLE "reputation_log";
+-- Intentionally no-op.
+-- Keeping reputation_log data intact; later migrations in this chain rely on this table.
+SELECT 1;

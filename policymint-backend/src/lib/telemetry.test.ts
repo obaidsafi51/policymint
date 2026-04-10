@@ -69,4 +69,27 @@ describe('captureErrorToSentry', () => {
       }),
     );
   });
+
+  it('does not throw for circular unknown errors', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+
+    vi.doMock('../config/env.js', () => ({
+      env: {
+        SENTRY_DSN: 'https://publickey@o123.ingest.sentry.io/456',
+      },
+    }));
+
+    vi.doMock('./logger.js', () => ({
+      logger: {
+        debug: vi.fn(),
+      },
+    }));
+
+    const { captureErrorToSentry } = await import('./telemetry.js');
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+
+    await expect(captureErrorToSentry({ error: circular })).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

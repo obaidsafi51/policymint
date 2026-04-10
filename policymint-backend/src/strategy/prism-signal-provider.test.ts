@@ -71,4 +71,13 @@ describe('PRISMSignalProvider', () => {
 
     await expect(provider.getSignal('BTC/USD')).rejects.toBeInstanceOf(PRISMAPIError);
   });
+
+  it('throws PRISMAPIError on request timeout', async () => {
+    fetchMock.mockRejectedValue(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+
+    const { PRISMAPIError, PRISMSignalProvider } = await import('./prism-signal-provider');
+    const provider = new PRISMSignalProvider();
+
+    await expect(provider.getSignal('BTC/USD')).rejects.toBeInstanceOf(PRISMAPIError);
+  });
 });

@@ -42,4 +42,15 @@ describe('computePositionSizing', () => {
     expect(ceiling.usdAmount).toBe(450);
     expect(ceiling.amountUsdScaled).toBe(BigInt(450_000_000));
   });
+
+  it('does not exceed configured cap when cap is below minimum floor', () => {
+    const result = computePositionSizing({
+      spendCapPerTxUsd: 5,
+      drawdownRiskScore: 0,
+      confidence: 1,
+    });
+
+    expect(result.usdAmount).toBe(5);
+    expect(result.amountUsdScaled).toBe(BigInt(5_000_000));
+  });
 });

@@ -54,6 +54,15 @@ function resolveFeedback(input: {
   executionState: ExecutionState;
 }): { score: number; feedbackType: FeedbackTypeValue; comment: string; signalType: SignalType } | null {
   if (input.result === 'allow') {
+    if (input.executionState === 'not-applicable') {
+      return {
+        score: 60,
+        feedbackType: FeedbackType.NEUTRAL,
+        comment: 'Trade allowed within policy bounds (no on-chain execution required)',
+        signalType: SignalType.POSITIVE,
+      };
+    }
+
     if (input.executionState === 'confirmed') {
       return {
         score: 80,
@@ -288,28 +297,11 @@ export async function evaluateRoutes(app: FastifyInstance) {
                 signature: response.eip712_signed_intent as `0x${string}`,
               });
 
-              const nextNonce = riskIntentForExecution.nonce;
-              const previousNonce = nextNonce - 1n;
-
-              await prisma.$transaction(async tx => {
-                const updatedCount = await tx.$executeRaw`
-                  UPDATE agents
-                  SET last_nonce = ${nextNonce}
-                  WHERE id = ${body.data.agent_id}::uuid
-                    AND last_nonce = ${previousNonce}
-                `;
-
-                if (Number(updatedCount) !== 1) {
-                  throw new Error('Failed to persist nonce increment after RiskRouter submission');
-                }
-
-                await tx.intentEvaluation.update({
-                  where: { id: response.evaluation_id },
-                  data: {
-                    executionTxHash: execution.txHash,
-                    emittedAt: new Date(),
-                  },
-                });
+              await prisma.intentEvaluation.update({
+                where: { id: response.evaluation_id },
+                data: {
+                  cycleId: execution.txHash,
+                },
               });
 
               await waitForTradeIntentConfirmation(execution.txHash);
@@ -351,6 +343,47 @@ export async function evaluateRoutes(app: FastifyInstance) {
                 },
               });
             }
+          } else if (response.result === 'allow') {
+            const validation = await postValidationRecord({
+              agentId: BigInt(agent.erc8004TokenId),
+              evaluationId: response.evaluation_id,
+              score: resolveAttestationScore({
+                result: response.result,
+                reason: response.reason,
+                executionState,
+              }),
+              notes: 'Policy evaluation allow; no on-chain RiskRouter execution for this action type',
+              checkpointData: {
+                action_type: body.data.action_type,
+                venue: body.data.venue,
+                amount: body.data.amount,
+                timestamp: Math.floor(Date.now() / 1_000),
+              },
+            });
+
+            await prisma.$transaction(async tx => {
+              await tx.intentEvaluation.update({
+                where: { id: response.evaluation_id },
+                data: {
+                  validationTxHash: validation.txHash,
+                  emittedAt: new Date(),
+                },
+              });
+
+              await tx.validationRecord.create({
+                data: {
+                  evaluationId: response.evaluation_id,
+                  registryType: RegistryType.ERC8004,
+                  txHash: validation.txHash,
+                  blockNumber: validation.blockNumber,
+                  outcomeRef: toOutcomeRef(response.evaluation_id),
+                  strategyCheckpointHash: validation.checkpointHash,
+                  emittedAt: new Date(),
+                  confirmedAt: new Date(),
+                  agentTokenId: agent.erc8004TokenId,
+                },
+              } as never);
+            });
           } else {
             const validation = await postValidationRecord({
               agentId: BigInt(agent.erc8004TokenId),
