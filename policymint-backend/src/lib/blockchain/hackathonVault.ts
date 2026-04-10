@@ -19,7 +19,10 @@ export async function claimHackathonAllocation(agentId: bigint): Promise<`0x${st
     }),
   );
 
-  logger.info({ contract: 'HackathonVault', txHash, agentId: agentId.toString() }, 'claimAllocation submitted');
+  logger.info(
+    { contract: 'HackathonVault', txHash, agentId: agentId.toString(), outcome: 'submitted' },
+    'claimAllocation submitted',
+  );
 
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
@@ -38,6 +41,7 @@ export async function claimHackathonAllocation(agentId: bigint): Promise<`0x${st
       agentId: agentId.toString(),
       blockNumber: receipt.blockNumber?.toString() ?? 'unknown',
       gasUsed: receipt.gasUsed?.toString() ?? 'unknown',
+      outcome: 'confirmed',
     },
     'claimAllocation confirmed',
   );

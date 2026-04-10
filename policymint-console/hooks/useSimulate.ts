@@ -5,6 +5,7 @@ import { publicClient } from '@/lib/viem';
 import { RISK_ROUTER_ABI, RISK_ROUTER_ADDRESS } from '@/lib/contracts';
 import { buildApiUrl, hasApiUrl } from '@/lib/api';
 import { defaultChecklist, mockDecisions } from '@/lib/mockData';
+import { formatAction, formatPair, resolveDirection } from '@/lib/riskRouterFormatting';
 import { PolicyChecklistItem, SimulateResult, TradeIntent } from '@/types';
 
 interface EvaluateResponse {
@@ -14,6 +15,10 @@ interface EvaluateResponse {
   evaluation_id: string;
   eip712_signed_intent: string;
 }
+
+type SimulateIntentResult =
+  | { status: 'ok'; valid: boolean; reason: string }
+  | { status: 'unavailable'; reason: string };
 
 function buildChecklist(result: 'allow' | 'block', reason: string | null): PolicyChecklistItem[] {
   if (result === 'allow') {
@@ -39,10 +44,15 @@ function buildChecklist(result: 'allow' | 'block', reason: string | null): Polic
   ];
 }
 
-async function simulateOnChain(agentId: string, intent: TradeIntent) {
-  const pair = `${intent.token_in.toUpperCase()}${(intent.token_out ?? 'USD').toUpperCase()}`;
-  const action = intent.action_type === 'trade' || intent.action_type === 'swap' ? 'BUY' : 'SELL';
-  const amountUsdScaled = BigInt(Math.floor(Number(intent.amount) * 1_000_000));
+async function simulateOnChain(agentId: string, intent: TradeIntent): Promise<SimulateIntentResult> {
+  const direction = resolveDirection({
+    actionType: intent.action_type,
+    params: intent.params,
+  });
+  const pair = formatPair(intent.token_in, intent.token_out);
+  const action = formatAction(direction);
+  const amount = Number(intent.amount);
+  const amountUsdScaled = BigInt(Math.floor(amount * 1_000_000));
 
   const result = await publicClient.readContract({
     address: RISK_ROUTER_ADDRESS,
@@ -51,7 +61,16 @@ async function simulateOnChain(agentId: string, intent: TradeIntent) {
     args: [BigInt(agentId), pair, action, amountUsdScaled],
   });
 
+  if (Array.isArray(result)) {
+    return {
+      status: 'ok',
+      valid: Boolean(result[0]),
+      reason: String(result[1] ?? ''),
+    };
+  }
+
   return {
+    status: 'ok',
     valid: Boolean(result.valid),
     reason: String(result.reason ?? ''),
   };
@@ -69,9 +88,11 @@ export function useSimulate(agentUuid: string, agentTokenId: string) {
     try {
       const start = performance.now();
 
-      let onChain = { valid: true, reason: 'demo mode' };
-      if (hasApiUrl()) {
+      let onChain: SimulateIntentResult = { status: 'unavailable', reason: 'demo mode' };
+      try {
         onChain = await simulateOnChain(agentTokenId || '0', intent);
+      } catch {
+        onChain = { status: 'unavailable', reason: 'on-chain simulation unavailable' };
       }
 
       if (!hasApiUrl()) {

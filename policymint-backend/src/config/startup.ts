@@ -1,18 +1,33 @@
 import { privateKeyToAccount } from 'viem/accounts';
 import { env } from './env.js';
-
-function assertHexAddress(value: string | undefined, label: string): asserts value is `0x${string}` {
-  if (!value) {
-    throw new Error(`Missing required ${label}`);
-  }
-}
+import { logger } from '../lib/logger.js';
 
 export function validateStartupConfiguration(): void {
-  assertHexAddress(env.IDENTITY_REGISTRY_ADDRESS, 'IDENTITY_REGISTRY_ADDRESS');
-  assertHexAddress(env.VALIDATION_REGISTRY_ADDRESS, 'VALIDATION_REGISTRY_ADDRESS');
-  assertHexAddress(env.REPUTATION_REGISTRY_ADDRESS, 'REPUTATION_REGISTRY_ADDRESS');
-  assertHexAddress(env.RISK_ROUTER_ADDRESS, 'RISK_ROUTER_ADDRESS');
-  assertHexAddress(env.HACKATHON_VAULT_ADDRESS, 'HACKATHON_VAULT_ADDRESS');
+  const missingContracts: string[] = [];
+
+  if (!env.IDENTITY_REGISTRY_ADDRESS && !env.AGENT_REGISTRY_ADDRESS) {
+    missingContracts.push('IDENTITY_REGISTRY_ADDRESS or AGENT_REGISTRY_ADDRESS');
+  }
+
+  if (!env.RISK_ROUTER_ADDRESS) {
+    missingContracts.push('RISK_ROUTER_ADDRESS');
+  }
+
+  if (!env.HACKATHON_VAULT_ADDRESS) {
+    missingContracts.push('HACKATHON_VAULT_ADDRESS');
+  }
+
+  if (!env.VALIDATION_REGISTRY_ADDRESS) {
+    missingContracts.push('VALIDATION_REGISTRY_ADDRESS');
+  }
+
+  if (!env.REPUTATION_REGISTRY_ADDRESS) {
+    missingContracts.push('REPUTATION_REGISTRY_ADDRESS');
+  }
+
+  if (missingContracts.length > 0) {
+    throw new Error(`Missing required contract addresses: ${missingContracts.join(', ')}`);
+  }
 
   if (!env.PRISM_API_KEY) {
     throw new Error('Missing required PRISM_API_KEY');
@@ -22,7 +37,7 @@ export function validateStartupConfiguration(): void {
     throw new Error('Missing required PRISM_BASE_URL');
   }
 
-  if (!env.STRATEGY_TICK_INTERVAL_MS || env.STRATEGY_TICK_INTERVAL_MS < 1_000) {
+  if (!env.STRATEGY_TICK_INTERVAL_MS || env.STRATEGY_TICK_INTERVAL_MS < 1000) {
     throw new Error('Invalid STRATEGY_TICK_INTERVAL_MS: must be at least 1000ms');
   }
 
@@ -32,4 +47,24 @@ export function validateStartupConfiguration(): void {
   if (operatorAddress.toLowerCase() === agentAddress.toLowerCase()) {
     throw new Error('Invalid wallet config: operatorWallet and agentWallet must be different addresses');
   }
+
+  logger.info(
+    {
+      startup: {
+        operatorWallet: operatorAddress,
+        agentWallet: agentAddress,
+        sameWallet: false,
+        strategyTickIntervalMs: env.STRATEGY_TICK_INTERVAL_MS,
+        contracts: {
+          identityRegistry: env.IDENTITY_REGISTRY_ADDRESS ?? env.AGENT_REGISTRY_ADDRESS,
+          riskRouter: env.RISK_ROUTER_ADDRESS,
+          hackathonVault: env.HACKATHON_VAULT_ADDRESS,
+          validationRegistry: env.VALIDATION_REGISTRY_ADDRESS,
+          reputationRegistry: env.REPUTATION_REGISTRY_ADDRESS,
+        },
+        prismBaseUrl: env.PRISM_BASE_URL,
+      },
+    },
+    'Startup configuration validated',
+  );
 }

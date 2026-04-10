@@ -8,6 +8,7 @@ import { TradeIntent } from '@/types';
 
 const intentSchema = z.object({
   action_type: z.enum(['swap', 'transfer', 'bridge', 'trade', 'custom']),
+  direction: z.enum(['buy', 'sell']),
   venue: z.string().min(1, 'venue is required'),
   amount: z.string().refine((value) => Number(value) > 0, 'amount must be positive'),
   token_in: z.string().min(1, 'token_in is required'),
@@ -31,6 +32,7 @@ export function IntentForm({ isLoading, onSubmit }: IntentFormProps) {
     resolver: zodResolver(intentSchema),
     defaultValues: {
       action_type: 'swap',
+      direction: 'buy',
       venue: 'kraken-spot',
       amount: '1000',
       token_in: 'ETH',
@@ -42,7 +44,14 @@ export function IntentForm({ isLoading, onSubmit }: IntentFormProps) {
     <form
       className="w-full space-y-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4 lg:w-[300px]"
       onSubmit={handleSubmit(async (values) => {
-        await onSubmit(values);
+        const { direction, ...intentValues } = values;
+        await onSubmit({
+          ...intentValues,
+          params: {
+            side: direction,
+            direction,
+          },
+        });
       })}
     >
       <h2 className="font-headline text-2xl font-bold tracking-tight text-[var(--text-primary)]">Compose intent</h2>
@@ -58,6 +67,17 @@ export function IntentForm({ isLoading, onSubmit }: IntentFormProps) {
           <option value="bridge">bridge</option>
           <option value="trade">trade</option>
           <option value="custom">custom</option>
+        </select>
+      </label>
+
+      <label className="block text-[11px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">
+        Direction
+        <select
+          {...register('direction')}
+          className="focus-ring mt-1 h-10 w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] px-3 text-sm text-[var(--text-primary)]"
+        >
+          <option value="buy">buy</option>
+          <option value="sell">sell</option>
         </select>
       </label>
 
@@ -103,7 +123,7 @@ export function IntentForm({ isLoading, onSubmit }: IntentFormProps) {
         className="focus-ring inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-transparent bg-[var(--text-brand)] px-3 text-sm font-semibold text-[var(--text-on-brand)] transition-transform duration-micro hover:scale-[0.98] disabled:opacity-80"
       >
         {isLoading ? <Loader2 size={14} className="animate-spin" /> : null}
-        Evaluate intent
+        Simulate intent
       </button>
 
       <button

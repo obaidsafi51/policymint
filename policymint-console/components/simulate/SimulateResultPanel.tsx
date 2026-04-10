@@ -11,6 +11,34 @@ interface SimulateResultPanelProps {
 export function SimulateResultPanel({ result, isLoading, error }: SimulateResultPanelProps) {
   const verdict = result?.policyEngine?.result;
 
+  const riskRouterLabel = (() => {
+    if (!result) {
+      return 'RiskRouter: —';
+    }
+
+    if (result.onChain.status === 'unavailable') {
+      return `RiskRouter: unavailable ⚠ (${result.onChain.reason})`;
+    }
+
+    if (result.onChain.valid) {
+      return 'RiskRouter: valid ✓';
+    }
+
+    return `RiskRouter: blocked ✕ (${result.onChain.reason})`;
+  })();
+
+  const riskRouterClass = (() => {
+    if (!result) {
+      return 'text-[var(--text-secondary)]';
+    }
+
+    if (result.onChain.status === 'unavailable') {
+      return 'text-[var(--text-warning)]';
+    }
+
+    return result.onChain.valid ? 'text-[var(--text-success)]' : 'text-[var(--text-danger)]';
+  })();
+
   const borderClass = verdict === 'allow'
     ? 'border border-[var(--border-success)]'
     : verdict === 'block'
@@ -22,7 +50,7 @@ export function SimulateResultPanel({ result, isLoading, error }: SimulateResult
       <section className={`rounded-xl bg-[var(--bg-surface)] p-5 ${borderClass}`}>
         {!result && !isLoading && !error ? (
           <div>
-            <p className="font-headline text-3xl font-bold tracking-tight text-[var(--text-primary)]">Waiting for intent</p>
+            <p className="font-headline text-3xl font-bold tracking-tight text-[var(--text-primary)]">Enter an intent to simulate</p>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
               active policies: venue allowlist, spend cap per tx, daily loss budget.
             </p>
@@ -47,7 +75,7 @@ export function SimulateResultPanel({ result, isLoading, error }: SimulateResult
             <p
               className={`mt-3 font-headline text-4xl font-bold leading-none ${verdict === 'allow' ? 'text-[var(--text-success)]' : 'text-[var(--text-danger)]'}`}
             >
-              {verdict === 'allow' ? 'intent allowed' : 'intent blocked'}
+              {verdict === 'allow' ? 'Intent allowed' : 'Intent blocked'}
             </p>
             {verdict === 'block' && result.policyEngine?.reason ? (
               <p className="mt-2 text-sm text-[var(--text-danger)]">{result.policyEngine.reason}</p>
@@ -55,8 +83,8 @@ export function SimulateResultPanel({ result, isLoading, error }: SimulateResult
             <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] p-3 text-xs text-[var(--text-secondary)] lg:grid-cols-4">
               <span className="font-mono">eval: {result.policyEngine?.evaluation_id ?? '—'}</span>
               <span className="font-mono">latency: {result.latency_ms}ms</span>
-              <span>
-                RiskRouter: {result.onChain.valid ? 'valid ✓' : `invalid (${result.onChain.reason})`}
+              <span className={riskRouterClass}>
+                {riskRouterLabel}
               </span>
               <span>PolicyMint: {verdict === 'allow' ? 'allowed ✓' : 'blocked ✕'}</span>
             </div>

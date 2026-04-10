@@ -11,7 +11,19 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      reportsDirectory: 'coverage'
+      reportsDirectory: 'coverage',
+      include: ['src/**/*.ts'],
+      exclude: [
+        'dist/**',
+        'tests/**',
+        'vitest.config.ts',
+        'src/**/*.test.ts',
+        'src/**/*.d.ts',
+        'src/types/**',
+        'src/**/*.interface.ts',
+        'src/index.ts',
+        'src/strategy/strategy.interface.ts',
+      ]
     }
   }
 });

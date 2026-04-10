@@ -15,7 +15,7 @@ import {
 } from './registration.constants.js';
 
 const AgentIdParamsSchema = z.object({
-  id: z.string().uuid()
+  id: z.string().uuid(),
 });
 
 const RegistrationProgressParamsSchema = z.object({
@@ -249,9 +249,7 @@ async function processRegistrationJob(
       stepNumber: 4,
       stepLabel: 'Storing on-chain agent ID',
       status: 'done',
-      message: onChainAgentId !== null
-        ? 'On-chain agent ID stored'
-        : 'No on-chain ID to store; step completed',
+      message: onChainAgentId !== null ? 'On-chain agent ID stored' : 'No on-chain ID to store; step completed',
     });
 
     currentStepNumber = 5;
@@ -370,9 +368,7 @@ export async function agentRoutes(app: FastifyInstance) {
     };
 
     const sendEvent = (event: RegistrationProgressEvent) => {
-      if (reply.raw.writableEnded) {
-        return;
-      }
+      if (reply.raw.writableEnded) return;
 
       reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
 
@@ -415,24 +411,31 @@ export async function agentRoutes(app: FastifyInstance) {
     let responseAgent = result.agent;
 
     if (canRegisterAgentOnChain()) {
-      try {
-        const frontendUrl = process.env.POLICYMINT_FRONTEND_URL ?? 'https://your-vercel-frontend-url.vercel.app';
-        const agentURI = buildCanonicalAgentURI(frontendUrl);
+      const frontendUrl = process.env.POLICYMINT_FRONTEND_URL ?? 'https://your-vercel-frontend-url.vercel.app';
+      const agentURI = buildCanonicalAgentURI(frontendUrl);
+      let onChainRegistration: { agentId: bigint; txHash: `0x${string}` } | null = null;
 
-        const { agentId, txHash } = await registerAgentOnChain({
+      try {
+        onChainRegistration = await registerAgentOnChain({
           name: CANONICAL_AGENT_NAME,
           description: CANONICAL_AGENT_DESCRIPTION,
           capabilities: [...CANONICAL_AGENT_CAPABILITIES],
           agentURI,
         });
+      } catch (err) {
+        app.log.error({ err, agent_id: result.agent.id }, 'On-chain agent registration failed');
+      }
 
-        const agentBeforeClaim = await prisma.agent.findUnique({
+      if (onChainRegistration) {
+        const { agentId, txHash } = onChainRegistration;
+
+        const agentBeforeClaim = (await prisma.agent.findUnique({
           where: { id: result.agent.id },
           select: {
             id: true,
             vaultClaimedAt: true,
           },
-        } as never) as { id: string; vaultClaimedAt: Date | null } | null;
+        } as never)) as { id: string; vaultClaimedAt: Date | null } | null;
 
         responseAgent = await prisma.agent.update({
           where: { id: result.agent.id },
@@ -468,19 +471,15 @@ export async function agentRoutes(app: FastifyInstance) {
             );
           }
         }
-      } catch (err) {
-        app.log.error({ err, agent_id: result.agent.id }, 'On-chain agent registration failed');
       }
     } else {
-      app.log.warn(
-        'IDENTITY_REGISTRY_ADDRESS/AGENT_REGISTRY_ADDRESS missing; skipping on-chain registration',
-      );
+      app.log.warn('IDENTITY_REGISTRY_ADDRESS/AGENT_REGISTRY_ADDRESS missing; skipping on-chain registration');
     }
 
     return reply.status(201).send({
       agent: responseAgent,
       apiKey: result.apiKey,
-      _notice: 'Store your apiKey securely. It will not be shown again.'
+      _notice: 'Store your apiKey securely. It will not be shown again.',
     });
   });
 }

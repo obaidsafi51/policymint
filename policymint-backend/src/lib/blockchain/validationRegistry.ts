@@ -98,6 +98,7 @@ export async function postValidationRecord(
       txHash,
       blockNumber: receipt.blockNumber.toString(),
       gasUsed: receipt.gasUsed.toString(),
+      outcome: 'confirmed',
     },
     'postEIP712Attestation confirmed',
   );

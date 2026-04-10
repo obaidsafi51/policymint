@@ -25,8 +25,8 @@ function fallbackRiskIntent(intent: EvaluateIntentInput) {
   return {
     agentId: BigInt(0),
     agentWallet: agentAccount.address,
-    pair: `${intent.token_in.toUpperCase()}${(intent.token_out ?? 'USD').toUpperCase()}`,
-    action: intent.action_type === 'trade' || intent.action_type === 'swap' ? 'BUY' : 'SELL',
+    pair: `${intent.token_in.toUpperCase()}/${(intent.token_out ?? 'USD').toUpperCase()}`,
+    action: 'buy',
     amountUsdScaled: BigInt(0),
     maxSlippageBps: BigInt(50),
     nonce: BigInt(0),
@@ -40,6 +40,7 @@ export class EvaluationServiceError extends Error {
     public readonly statusCode: number
   ) {
     super(message);
+    this.name = 'EvaluationServiceError';
   }
 }
 
@@ -66,17 +67,9 @@ async function getCurrentDailyAllowedTotalWei(agentId: string): Promise<string> 
   `;
 
   const total = rows[0]?.total;
-  if (!total) {
-    return '0';
-  }
-
-  if (typeof total === 'string') {
-    return total;
-  }
-
-  if (typeof total === 'object' && 'toString' in total) {
-    return total.toString();
-  }
+  if (!total) return '0';
+  if (typeof total === 'string') return total;
+  if (typeof total === 'object' && 'toString' in total) return total.toString();
 
   return '0';
 }
@@ -84,20 +77,18 @@ async function getCurrentDailyAllowedTotalWei(agentId: string): Promise<string> 
 async function getAllowedTradesLastHour(agentId: string): Promise<number> {
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1_000);
 
-  const count = await prisma.intentEvaluation.count({
+  return prisma.intentEvaluation.count({
     where: {
       agentId,
       result: EvaluationResult.ALLOW,
       actionType: {
-        in: [ActionType.TRADE, ActionType.SWAP],
+        in: [ActionType.TRADE],
       },
       createdAt: {
         gte: oneHourAgo,
       },
     },
   });
-
-  return count;
 }
 
 function evaluatePolicy(input: {
@@ -106,9 +97,6 @@ function evaluatePolicy(input: {
   policyParams: Prisma.JsonValue;
   currentDailyTotalWei: string;
 }): EvaluatorResult {
-  // INVARIANT: Invalid or missing policy params always produce a block.
-  // Fail-open on a spend cap is a financial vulnerability.
-  // If params are malformed, the policy is treated as maximally restrictive.
   if (input.policyType === 'VENUE_ALLOWLIST') {
     return evaluateVenueAllowlist(input.intent, input.policyParams);
   }
@@ -119,7 +107,7 @@ function evaluatePolicy(input: {
 
   if (input.policyType === 'DAILY_LOSS_BUDGET') {
     return evaluateDailyLossBudget(input.intent, input.policyParams, {
-      currentDailyTotalWei: input.currentDailyTotalWei
+      currentDailyTotalWei: input.currentDailyTotalWei,
     });
   }
 
@@ -128,10 +116,7 @@ function evaluatePolicy(input: {
 
 function getRequestedMaxSlippageBps(intent: EvaluateIntentInput): number | null {
   const raw = Number(intent.params?.max_slippage_bps ?? Number.NaN);
-  if (!Number.isFinite(raw)) {
-    return null;
-  }
-
+  if (!Number.isFinite(raw)) return null;
   return Math.floor(raw);
 }
 
@@ -142,7 +127,7 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
       id: true,
       erc8004TokenId: true,
       lastNonce: true,
-    }
+    },
   });
 
   if (!agent) {
@@ -153,17 +138,16 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
     where: {
       agentId: intent.agent_id,
       isActive: true,
-      deletedAt: null
+      deletedAt: null,
     },
     select: {
       id: true,
       type: true,
-      params: true
+      params: true,
     },
     orderBy: {
-      // TODO(post-hackathon): Replace createdAt ordering with explicit policy priority field.
-      createdAt: 'asc'
-    }
+      createdAt: 'asc',
+    },
   });
 
   let result: 'allow' | 'block' = 'allow';
@@ -176,7 +160,7 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
     reason = `Trade rate limit exceeded: max ${MAX_ALLOWED_TRADES_PER_HOUR} allowed trades per rolling hour.`;
   }
 
-  if (result === 'allow' && (intent.action_type === 'trade' || intent.action_type === 'swap')) {
+  if (result === 'allow' && intent.action_type === 'trade') {
     const requestedMaxSlippageBps = getRequestedMaxSlippageBps(intent);
     if (requestedMaxSlippageBps !== null && requestedMaxSlippageBps > MAX_ALLOWED_SLIPPAGE_BPS) {
       result = 'block';
@@ -192,7 +176,7 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
       intent,
       policyType: policy.type,
       policyParams: policy.params,
-      currentDailyTotalWei
+      currentDailyTotalWei,
     });
 
     if (!evaluation.passed) {

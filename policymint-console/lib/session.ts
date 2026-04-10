@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { getIronSession, type IronSessionOptions } from 'iron-session';
+import { getIronSession, type SessionOptions } from 'iron-session';
 import { cookies } from 'next/headers';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/constants';
 
@@ -22,7 +22,7 @@ function getSessionPassword() {
   return password;
 }
 
-export const sessionOptions: IronSessionOptions = {
+export const sessionOptions: SessionOptions = {
   cookieName: SESSION_COOKIE_NAME,
   password: getSessionPassword(),
   cookieOptions: {

@@ -38,12 +38,18 @@ export class StrategyLoop {
   }
 
   async start(): Promise<void> {
-    if (this.started) {
-      return;
-    }
+    if (this.started) return;
 
     if (!env.AGENT_ID) {
       this.logger.warn({ event: 'STRATEGY_LOOP_DISABLED' }, 'AGENT_ID not set; strategy loop disabled');
+      return;
+    }
+
+    if (!env.INTERNAL_SERVICE_KEY) {
+      this.logger.warn(
+        { event: 'STRATEGY_LOOP_DISABLED' },
+        'INTERNAL_SERVICE_KEY not set; strategy loop cannot call /v1/evaluate',
+      );
       return;
     }
 
@@ -53,16 +59,16 @@ export class StrategyLoop {
     }, env.STRATEGY_TICK_INTERVAL_MS);
 
     void this.tick();
-    this.logger.info({ event: 'STRATEGY_LOOP_STARTED', tick_interval_ms: env.STRATEGY_TICK_INTERVAL_MS }, 'PRISM strategy interval loop started');
+    this.logger.info(
+      { event: 'STRATEGY_LOOP_STARTED', tick_interval_ms: env.STRATEGY_TICK_INTERVAL_MS },
+      'PRISM strategy interval loop started',
+    );
   }
 
   async stop(): Promise<void> {
-    if (!this.started) {
-      return;
-    }
+    if (!this.started) return;
 
     this.started = false;
-
     if (this.intervalHandle) {
       clearInterval(this.intervalHandle);
       this.intervalHandle = null;
@@ -71,40 +77,39 @@ export class StrategyLoop {
     this.logger.info({ event: 'STRATEGY_LOOP_STOPPED' }, 'Strategy loop stopped');
   }
 
-  async tick(): Promise<void> {
+  public async tick(): Promise<void> {
     try {
-      if (!this.started || this.isTickRunning) {
-        return;
-      }
-
+      if (!this.started || this.isTickRunning) return;
       this.isTickRunning = true;
 
-      if (!env.AGENT_ID) {
-        return;
-      }
+      if (!env.AGENT_ID) return;
 
       const agent = await prisma.agent.findUnique({
         where: { id: env.AGENT_ID },
-        select: {
-          id: true,
-          isActive: true,
-          erc8004TokenId: true,
-        },
+        select: { id: true, isActive: true, erc8004TokenId: true },
       });
 
       if (!agent?.isActive || !agent.erc8004TokenId) {
-        this.logger.warn({ event: 'STRATEGY_AGENT_INACTIVE_OR_UNREGISTERED', agent_id: env.AGENT_ID }, 'Skipping tick: agent inactive or not registered on-chain');
+        this.logger.warn(
+          { event: 'STRATEGY_AGENT_INACTIVE_OR_UNREGISTERED', agent_id: env.AGENT_ID },
+          'Skipping tick: agent inactive or not registered on-chain',
+        );
         return;
       }
 
       const canonicalSymbol = await this.signalProvider.resolveSymbol(this.targetAsset);
-      const signal = await this.signalProvider.getSignal(canonicalSymbol);
 
-      this.consecutivePrismFailures = 0;
       if (this.prismPaused) {
+        // Probe recovery on each tick while paused
+        await this.signalProvider.getSignal(canonicalSymbol);
         this.prismPaused = false;
+        this.consecutivePrismFailures = 0;
         this.logger.info({ event: 'PRISM_RESUMED', symbol: canonicalSymbol }, 'PRISM recovered; strategy loop resumed');
+        return;
       }
+
+      const signal = await this.signalProvider.getSignal(canonicalSymbol);
+      this.consecutivePrismFailures = 0;
 
       if (signal.direction === 'neutral') {
         this.logger.info({ event: 'PRISM_NEUTRAL', symbol: canonicalSymbol }, 'PRISM signal neutral, skipping tick');
@@ -112,7 +117,10 @@ export class StrategyLoop {
       }
 
       if (signal.confidence < 0.6) {
-        this.logger.info({ event: 'PRISM_LOW_CONFIDENCE', symbol: canonicalSymbol, confidence: signal.confidence }, 'PRISM signal low confidence, skipping tick');
+        this.logger.info(
+          { event: 'PRISM_LOW_CONFIDENCE', symbol: canonicalSymbol, confidence: signal.confidence },
+          'PRISM signal low confidence, skipping tick',
+        );
         return;
       }
 
@@ -123,28 +131,36 @@ export class StrategyLoop {
         confidence: signal.confidence,
       });
 
-      const evaluation = await this.evaluateIntentFn(this.toTradeIntent({
-        signalAction: signal.direction,
-        signalReason: `prism_confidence=${signal.confidence}`,
-        pair: canonicalSymbol,
-        amountUsdScaled: position.amountUsdScaled,
-      }));
+      const evaluation = await this.evaluateIntentFn(
+        this.toTradeIntent({
+          signalAction: signal.direction,
+          signalReason: `prism_confidence=${signal.confidence}`,
+          pair: canonicalSymbol,
+          amountUsdScaled: position.amountUsdScaled,
+        }),
+      );
 
       if (evaluation.result === 'block') {
-        this.logger.info({
-          event: 'TRADE_BLOCKED',
-          reason: evaluation.reason,
-          evaluation_id: evaluation.evaluation_id,
-        }, 'Trade blocked by policy engine');
+        this.logger.info(
+          {
+            event: 'TRADE_BLOCKED',
+            reason: evaluation.reason,
+            evaluation_id: evaluation.evaluation_id,
+          },
+          'Trade blocked by policy engine',
+        );
         return;
       }
 
-      this.logger.info({
-        event: 'EVALUATION_ALLOWED',
-        pair: canonicalSymbol,
-        amount_usd_scaled: position.amountUsdScaled.toString(),
-        evaluation_id: evaluation.evaluation_id,
-      }, 'Evaluation returned allow; execution continues in policy pipeline');
+      this.logger.info(
+        {
+          event: 'EVALUATION_ALLOWED',
+          pair: canonicalSymbol,
+          amount_usd_scaled: position.amountUsdScaled.toString(),
+          evaluation_id: evaluation.evaluation_id,
+        },
+        'Evaluation returned allow; execution continues in policy pipeline',
+      );
     } catch (error) {
       if (error instanceof PRISMAPIError) {
         this.consecutivePrismFailures += 1;
@@ -162,14 +178,14 @@ export class StrategyLoop {
 
         if (this.consecutivePrismFailures > 3) {
           this.prismPaused = true;
-          this.logger.error({ event: 'PRISM_PAUSED', failures: this.consecutivePrismFailures }, 'PRISM outage threshold reached; loop paused until successful signal fetch');
+          this.logger.error(
+            { event: 'PRISM_PAUSED', failures: this.consecutivePrismFailures },
+            'PRISM outage threshold reached; loop paused until successful signal fetch',
+          );
           await captureErrorToSentry({
             error,
             tags: { stage: 'prism_outage_pause' },
-            context: {
-              failures: this.consecutivePrismFailures,
-              endpoint: error.endpoint,
-            },
+            context: { failures: this.consecutivePrismFailures, endpoint: error.endpoint },
           });
         }
 
@@ -193,9 +209,7 @@ export class StrategyLoop {
     amountUsdScaled: bigint;
   }): EvaluateIntentInput {
     const agentId = env.AGENT_ID;
-    if (!agentId) {
-      throw new Error('AGENT_ID is not configured');
-    }
+    if (!agentId) throw new Error('AGENT_ID is not configured');
 
     return {
       agent_id: agentId,

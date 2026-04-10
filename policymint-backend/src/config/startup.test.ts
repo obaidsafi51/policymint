@@ -46,9 +46,11 @@ describe('validateStartupConfiguration', () => {
       ...BASE_ENV,
       AGENT_WALLET_PRIVATE_KEY: BASE_ENV.OPERATOR_WALLET_PRIVATE_KEY,
     };
-    const { validateStartupConfiguration } = await import('./startup');
 
-    expect(() => validateStartupConfiguration()).toThrow('operatorWallet and agentWallet must be different addresses');
+    const { validateStartupConfiguration } = await import('./startup');
+    expect(() => validateStartupConfiguration()).toThrow(
+      'operatorWallet and agentWallet must be different addresses',
+    );
   });
 
   it('fails when PRISM env is missing', async () => {

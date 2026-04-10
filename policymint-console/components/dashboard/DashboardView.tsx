@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { Plus } from 'lucide-react';
 import { DrawdownChart } from '@/components/dashboard/DrawdownChart';
 import { MetricTileGrid } from '@/components/dashboard/MetricTileGrid';
@@ -59,19 +60,28 @@ export function DashboardView() {
         <article className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-6 xl:col-span-4">
           <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">Active agents</span>
           <div className="mt-4 flex -space-x-3">
-            <img
+            <Image
               src="https://lh3.googleusercontent.com/aida-public/AB6AXuCwt55pVa2DOcZYzmZ5RUupKiZdQFNCk2yFwsSedrPikjqs4KEMD4Bt_A0TfB8wQCTfF67MpihGqvWCwZr8hTP2ost7mYKvxzjSIrQPtpEV9-7ERnJtELa7NF1PvY_dWa43S0d_bdY1DDga-JBhR9SlRwJa38ViA--OqkcBkmsCpwxJyP-in2hGkQNYINQ-_6X_SvfqNGMg0ylJn9u-jNkIwgmmqQ78XADZUmtAJ7p86x7beOLvdFn1zjXk0YxB3YtJK3djdlYVLDGV"
               alt="Agent 1"
+              width={40}
+              height={40}
+              unoptimized
               className="h-10 w-10 rounded-full border-2 border-[var(--bg-card)] object-cover"
             />
-            <img
+            <Image
               src="https://lh3.googleusercontent.com/aida-public/AB6AXuCsto6LZDqF_plNDP1ijaxCpujWWPmp-_O9zenFeugQkYi_qhn8ktDnJ0KvanJpSsksZHMKPZwE_cTHnfivyKf7yr-qka2B1aN7CpJEpccOKGnP3q1u-GRtBFrM53NWPCGnnWDqiw9P_2_uQ0_sMlfQm0loyvQGH-wrCGq_kTUOSQx6RHJdpA7qdqwTYNOKLkO5KE4SpFf3nuYxZBKDgWHvvLswnzaHdRtgnsyc89EEECrxYG7Dp7p0hdhLSyvrVkt9r_iRdDZIVX8q"
               alt="Agent 2"
+              width={40}
+              height={40}
+              unoptimized
               className="h-10 w-10 rounded-full border-2 border-[var(--bg-card)] object-cover"
             />
-            <img
+            <Image
               src="https://lh3.googleusercontent.com/aida-public/AB6AXuAalGZ-vlq7axlUSRn2g0GhgMqZd5U4SV7HUtKAhqJGlrntzmV2su-2CW1NJQiOihtMyubi1qSTp_KUJFCtgfALRz-kqUb0GOtsnxrfcgkBK5wsEkW6ARIFWqPqEPs7ciMxQybX4rq3MNs3dt_rFANLpPgXAktw28-l0PL1fOT9aJkihdlxKciV_UwO6yP29UWgcw8YOR51ePGsRycX-ihnrJPFevjGCHmT64elxGVBVmx3RA4r1hbwlUv87fl8_fSqCsRLXi6Vnp3x"
               alt="Agent 3"
+              width={40}
+              height={40}
+              unoptimized
               className="h-10 w-10 rounded-full border-2 border-[var(--bg-card)] object-cover"
             />
             <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[var(--bg-card)] bg-[var(--bg-elevated)] text-[11px] font-bold text-[var(--text-brand)]">+12</div>

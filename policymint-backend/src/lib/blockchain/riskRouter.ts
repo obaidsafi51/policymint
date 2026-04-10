@@ -34,7 +34,6 @@ export interface WaitForTradeIntentConfirmationResult {
 export async function submitTradeIntent(
   params: SubmitTradeIntentParams,
 ): Promise<SubmitTradeIntentResult> {
-
   logger.info(
     {
       contract: 'RiskRouter',
@@ -56,7 +55,7 @@ export async function submitTradeIntent(
     }),
   );
 
-  logger.info({ contract: 'RiskRouter', txHash }, 'submitTradeIntent submitted');
+  logger.info({ contract: 'RiskRouter', txHash, outcome: 'submitted' }, 'submitTradeIntent submitted');
 
   return { txHash };
 }
@@ -82,8 +81,9 @@ export async function waitForTradeIntentConfirmation(
     {
       contract: 'RiskRouter',
       txHash,
-      blockNumber: receipt.blockNumber.toString(),
-      gasUsed: receipt.gasUsed.toString(),
+      blockNumber: receipt.blockNumber?.toString() ?? 'unknown',
+      gasUsed: receipt.gasUsed?.toString() ?? 'unknown',
+      outcome: 'confirmed',
     },
     'submitTradeIntent confirmed',
   );

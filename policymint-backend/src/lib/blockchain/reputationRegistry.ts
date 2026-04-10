@@ -56,19 +56,13 @@ export async function emitReputationSignal(params: EmitSignalParams): Promise<`0
       address: REPUTATION_REGISTRY,
       abi: REPUTATION_REGISTRY_ABI,
       functionName: 'submitFeedback',
-      args: [
-        params.agentId,
-        params.score,
-        params.outcomeRef,
-        params.comment.slice(0, 256),
-        params.feedbackType,
-      ],
+      args: [params.agentId, params.score, params.outcomeRef, params.comment.slice(0, 256), params.feedbackType],
       account: operatorAccount,
       gas: BigInt(150_000),
     }),
   );
 
-  logger.info({ contract: 'ReputationRegistry', txHash }, 'submitFeedback submitted');
+  logger.info({ contract: 'ReputationRegistry', txHash, outcome: 'submitted' }, 'submitFeedback submitted');
 
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
@@ -86,6 +80,7 @@ export async function emitReputationSignal(params: EmitSignalParams): Promise<`0
       txHash,
       blockNumber: receipt.blockNumber?.toString() ?? 'unknown',
       gasUsed: receipt.gasUsed?.toString() ?? 'unknown',
+      outcome: 'confirmed',
     },
     'submitFeedback confirmed',
   );

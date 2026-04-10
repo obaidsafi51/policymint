@@ -83,6 +83,7 @@ describeDb('ValidationRegistry emission integration', () => {
     vi.spyOn(riskRouter, 'submitTradeIntent').mockResolvedValue({
       txHash: `0x${'f'.repeat(64)}` as `0x${string}`,
     });
+    vi.spyOn(riskRouter, 'waitForTradeIntentConfirmation').mockResolvedValue();
     vi.spyOn(reputationRegistry, 'canEmitReputationSignalOnChain').mockReturnValue(false);
 
     const response = await app.inject({

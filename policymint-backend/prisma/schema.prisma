@@ -64,6 +64,7 @@ model IntentEvaluation {
   result             EvaluationResult
   blockReason        String?            @map("block_reason")
   eip712SignedIntent String?            @map("eip712_signed_intent")
+  executionTxHash    String?            @map("execution_tx_hash")
   validationTxHash   String?            @map("validation_tx_hash")
   emittedAt          DateTime?          @map("emitted_at")
   cycleId            String?            @map("cycle_id")
@@ -114,8 +115,8 @@ model ReputationSignal {
 
 model ReputationLog {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  evaluationId String   @map("evaluation_id") @db.Uuid
   agentId      String   @map("agent_id") @db.Uuid
+  evaluationId String   @map("evaluation_id") @db.Uuid
   attempt      Int
   status       String
   txHash       String?  @map("tx_hash")

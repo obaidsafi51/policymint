@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAccount, useChainId } from 'wagmi';
@@ -106,9 +107,12 @@ export function Sidebar() {
 
         <div className="mt-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] px-2 py-2">
           <div className="flex items-center gap-2">
-            <img
+            <Image
               src="https://lh3.googleusercontent.com/aida-public/AB6AXuBl_4KPx6m7x-tyGrc22ejo8YtB1yvAX-s7JkXYBDHHovzb8nY1LT9Ei1X0uzJJgw7ynZUCd3Q7mP1ch7zmN--KTF7sKchNOJdQR85f2jH4wPIuazFOPSUXOGgUfGlySCQnHBf9AcNiQV9dtt-x2_hksE9LylvYPFNZqGP3gN9pWoWsYUHEu6CPj-2Xe-uRn_L9j1k6LzbvbAME_Ig7FZQDkfHainVMpNPoohkj88Z3uC21bOQeIho64QOJ7Kp2HRF8ZqrY7Wf3IQSR"
               alt="Operator Avatar"
+              width={32}
+              height={32}
+              unoptimized
               className="h-8 w-8 rounded-full object-cover"
             />
             <div className="min-w-0">

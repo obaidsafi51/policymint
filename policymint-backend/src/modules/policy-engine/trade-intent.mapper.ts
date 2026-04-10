@@ -23,6 +23,7 @@ const TOKEN_DECIMALS: Record<string, number> = {
   USDC: 6,
   USDT: 6,
   DAI: 18,
+  USD: 6,
 };
 
 const TOKEN_TO_KRAKEN_PAIR: Record<string, string> = {
@@ -35,6 +36,7 @@ const TOKEN_TO_KRAKEN_PAIR: Record<string, string> = {
   USDC: 'USDCUSD',
   USDT: 'USDTUSD',
   DAI: 'DAIUSD',
+  USD: 'USDUSD',
 };
 
 const PRICE_CACHE_TTL_MS = 30_000;
@@ -81,16 +83,12 @@ function toUnitAmount(amountRaw: string, decimals: number): number {
 }
 
 async function getKrakenUsdPrice(tokenSymbol: string): Promise<number> {
-  if (env.NODE_ENV === 'test') {
-    return 1;
-  }
+  if (env.NODE_ENV === 'test') return 1;
 
   const normalized = normalizeSymbol(tokenSymbol);
   const now = Date.now();
   const cached = priceCache.get(normalized);
-  if (cached && cached.expiresAt > now) {
-    return cached.price;
-  }
+  if (cached && cached.expiresAt > now) return cached.price;
 
   const pair = TOKEN_TO_KRAKEN_PAIR[normalized] ?? `${normalized}USD`;
   const url = `https://api.kraken.com/0/public/Ticker?pair=${encodeURIComponent(pair)}`;
@@ -104,7 +102,6 @@ async function getKrakenUsdPrice(tokenSymbol: string): Promise<number> {
     if (error instanceof Error && error.name === 'AbortError') {
       throw new Error(`Kraken ticker request timed out after ${KRAKEN_FETCH_TIMEOUT_MS}ms`);
     }
-
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -135,12 +132,46 @@ async function getKrakenUsdPrice(tokenSymbol: string): Promise<number> {
     throw new Error(`Invalid Kraken price for ${pair}: ${lastTraded}`);
   }
 
-  priceCache.set(normalized, {
-    price,
-    expiresAt: now + PRICE_CACHE_TTL_MS,
-  });
-
+  priceCache.set(normalized, { price, expiresAt: now + PRICE_CACHE_TTL_MS });
   return price;
+}
+
+async function getPrismUsdPrice(tokenSymbol: string): Promise<number | null> {
+  if (env.NODE_ENV === 'test') return 1;
+
+  const normalized = normalizeSymbol(tokenSymbol);
+  const url = `${env.PRISM_BASE_URL.replace(/\/$/, '')}/crypto/${encodeURIComponent(normalized)}/price`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), KRAKEN_FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { Authorization: `Bearer ${env.PRISM_API_KEY}` },
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as Record<string, unknown>;
+    const candidate = payload.priceUsd ?? payload.price_usd ?? payload.price ?? payload.usd ?? payload.value;
+    const parsed = Number(candidate);
+
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return parsed;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function resolveUsdPrice(tokenSymbol: string): Promise<number> {
+  if (normalizeSymbol(tokenSymbol) === 'USD') return 1;
+
+  const prismPrice = await getPrismUsdPrice(tokenSymbol);
+  if (prismPrice !== null) return prismPrice;
+
+  return getKrakenUsdPrice(tokenSymbol);
 }
 
 function resolvePair(tokenIn: string, tokenOut?: string): string {
@@ -162,16 +193,17 @@ export async function mapToRiskRouterIntent(input: {
   intent: EvaluateIntentInput;
   erc8004TokenId: string;
   agentWalletAddress: `0x${string}`;
-  nonce: number | bigint;
+  nonce: bigint;
   defaultMaxSlippageBps?: number;
 }): Promise<RiskRouterTradeIntent> {
   const pairFromParams = typeof input.intent.params?.pair === 'string' ? input.intent.params.pair.trim() : '';
   const tokenIn = normalizeSymbol(input.intent.token_in);
   const tokenOut = normalizeSymbol(input.intent.token_out ?? 'USD');
   const decimals = TOKEN_DECIMALS[tokenIn] ?? 18;
-  const priceUsd = await getKrakenUsdPrice(tokenIn);
+  const priceUsd = await resolveUsdPrice(tokenIn);
   const amountUnits = toUnitAmount(input.intent.amount, decimals);
   const amountUsdScaled = BigInt(Math.max(0, Math.round(amountUnits * priceUsd * 1_000_000)));
+
   const maxSlippageBpsFromParams = Number(input.intent.params?.max_slippage_bps ?? NaN);
   const maxSlippageBps = Number.isFinite(maxSlippageBpsFromParams)
     ? Math.max(1, Math.floor(maxSlippageBpsFromParams))
@@ -190,7 +222,7 @@ export async function mapToRiskRouterIntent(input: {
     action: mapAction(input.intent),
     amountUsdScaled,
     maxSlippageBps: BigInt(maxSlippageBps),
-    nonce: BigInt(input.nonce),
+    nonce: input.nonce,
     deadline,
   };
 }
