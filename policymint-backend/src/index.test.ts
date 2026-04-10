@@ -9,6 +9,7 @@ const envState = vi.hoisted(() => ({ PORT: 4010, AGENT_ID: undefined as string |
 const agentFindUniqueMock = vi.hoisted(() => vi.fn());
 const agentUpdateMock = vi.hoisted(() => vi.fn());
 const registerAgentOnChainMock = vi.hoisted(() => vi.fn());
+const findRegisteredAgentByWalletMock = vi.hoisted(() => vi.fn());
 const claimHackathonAllocationMock = vi.hoisted(() => vi.fn());
 const getRiskRouterIntentNonceMock = vi.hoisted(() => vi.fn());
 const captureErrorToSentryMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -44,6 +45,7 @@ vi.mock('./agent/loop.js', () => ({
 
 vi.mock('./lib/blockchain/agentRegistry.js', () => ({
   registerAgentOnChain: registerAgentOnChainMock,
+  findRegisteredAgentByWallet: findRegisteredAgentByWalletMock,
 }));
 
 vi.mock('./lib/blockchain/hackathonVault.js', () => ({
@@ -94,6 +96,7 @@ describe('index main bootstrap', () => {
       lastNonce: 1n,
     });
     agentUpdateMock.mockResolvedValue(undefined);
+    findRegisteredAgentByWalletMock.mockResolvedValue(null);
     getRiskRouterIntentNonceMock.mockResolvedValue(1n);
   });
 
@@ -169,6 +172,46 @@ describe('index main bootstrap', () => {
     expect(app.close).toHaveBeenCalled();
     expect(prismaDisconnectMock).toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it('recovers startup registration when agent wallet is already registered on-chain', async () => {
+    envState.AGENT_ID = 'agent-1';
+    const app = createAppMock();
+    buildAppMock.mockResolvedValue(app);
+
+    agentFindUniqueMock
+      .mockResolvedValueOnce({
+        id: 'agent-1',
+        erc8004TokenId: null,
+        vaultClaimedAt: null,
+        registrationTxHash: null,
+      })
+      .mockResolvedValueOnce({
+        id: 'agent-1',
+        erc8004TokenId: '99',
+        lastNonce: 0n,
+      });
+
+    registerAgentOnChainMock.mockRejectedValue(new Error('AgentRegistry: agentWallet already registered'));
+    findRegisteredAgentByWalletMock.mockResolvedValue({
+      agentId: 99n,
+      txHash: '0xabc',
+    });
+    getRiskRouterIntentNonceMock.mockResolvedValue(0n);
+
+    await import('./index.js');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(findRegisteredAgentByWalletMock).toHaveBeenCalledTimes(1);
+    expect(claimHackathonAllocationMock).toHaveBeenCalledWith(99n);
+    expect(agentUpdateMock).toHaveBeenCalledWith({
+      where: { id: 'agent-1' },
+      data: {
+        erc8004TokenId: '99',
+        registrationTxHash: '0xabc',
+      },
+    });
+    expect(strategyStartMock).toHaveBeenCalledTimes(1);
   });
 
   it('stops strategy and exits with code 1 when listen fails', async () => {

@@ -17,6 +17,11 @@ export interface RegisterAgentResult {
   txHash: `0x${string}`;
 }
 
+export interface ExistingAgentRegistration {
+  agentId: bigint;
+  txHash: `0x${string}` | null;
+}
+
 const AGENT_REGISTRY =
   (env.IDENTITY_REGISTRY_ADDRESS ??
     (process.env.AGENT_REGISTRY_ADDRESS as `0x${string}` | undefined)) as
@@ -25,6 +30,36 @@ const AGENT_REGISTRY =
 
 export function canRegisterAgentOnChain() {
   return Boolean(AGENT_REGISTRY);
+}
+
+export async function findRegisteredAgentByWallet(
+  walletAddress: `0x${string}` = agentAccount.address,
+): Promise<ExistingAgentRegistration | null> {
+  if (!AGENT_REGISTRY) {
+    return null;
+  }
+
+  const logs = await publicClient.getLogs({
+    address: AGENT_REGISTRY,
+    event: AGENT_REGISTRY_ABI[0],
+    args: { agentWallet: walletAddress },
+    fromBlock: BigInt(0),
+    toBlock: 'latest',
+  });
+
+  const latestLog = logs.at(-1);
+  if (!latestLog?.topics[1]) {
+    return null;
+  }
+
+  try {
+    return {
+      agentId: BigInt(latestLog.topics[1]),
+      txHash: latestLog.transactionHash ?? null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function registerAgentOnChain(
