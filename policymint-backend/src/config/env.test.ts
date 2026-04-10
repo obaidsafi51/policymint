@@ -21,11 +21,8 @@ const validEnv = {
   PRISM_BASE_URL: 'https://api.prismapi.ai',
   STRATEGY_TICK_INTERVAL_MS: '450000',
   INTERNAL_SERVICE_KEY: 'test-internal-service-key-at-least-32-characters',
-  PRISM_API_KEY: 'prism_sk_test_key',
-  PRISM_BASE_URL: 'https://api.prismapi.ai',
   KRAKEN_CLI_PATH: 'kraken',
   STRATEGY_TRADE_AMOUNT_USD: '100',
-  STRATEGY_TICK_INTERVAL_MS: '450000',
   AGENT_ID: '018f5f93-1ecf-7cc0-bf2f-0d72f12a9c1b',
 };
 

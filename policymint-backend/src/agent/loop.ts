@@ -227,6 +227,10 @@ export class StrategyLoop {
     }
   }
 
+  public async onPrice(_price: number): Promise<void> {
+    await this.tick();
+  }
+
   private toTradeIntent(input: {
     signalAction: 'buy' | 'sell';
     signalReason: string;
