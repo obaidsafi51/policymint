@@ -9,7 +9,7 @@ async function readReputation(agentTokenId: string): Promise<number> {
   const value = await publicClient.readContract({
     address: REPUTATION_REGISTRY_ADDRESS,
     abi: REPUTATION_REGISTRY_ABI,
-    functionName: 'getScore',
+    functionName: 'getAverageScore',
     args: [BigInt(agentTokenId || '0')],
   });
 

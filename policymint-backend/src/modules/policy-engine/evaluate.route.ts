@@ -1,20 +1,24 @@
 import type { FastifyInstance } from 'fastify';
 import { RegistryType, SignalType } from '@prisma/client';
-import { keccak256, toHex } from 'viem';
+import { keccak256, toBytes } from 'viem';
 import { prisma } from '../../db/client.js';
 import { verifyApiKey } from '../../lib/crypto.js';
 import { env } from '../../config/env.js';
 import { EvaluateIntentSchema } from './evaluate.schema.js';
 import { evaluateIntent } from './evaluate.service.js';
 import { canPostValidationOnChain, postValidationRecord } from '../../lib/blockchain/validationRegistry.js';
-import { canEmitReputationSignalOnChain, FeedbackType, emitReputationSignal } from '../../lib/blockchain/reputationRegistry.js';
+import {
+  AlreadyRatedError,
+  canEmitReputationSignalOnChain,
+  emitReputationSignal,
+} from '../../lib/blockchain/reputationRegistry.js';
 import { submitTradeIntent, waitForTradeIntentConfirmation } from '../../lib/blockchain/riskRouter.js';
+import { resolveReputationPayload, type EvaluationOutcome } from './reputation.mapper.js';
 import { captureErrorToSentry } from '../../lib/telemetry.js';
 
 const API_KEY_PREFIX = 'pm_live_';
 const PREFIX_LOOKUP_LENGTH = API_KEY_PREFIX.length + 8;
 const RATE_LIMIT_TIME_WINDOW = env.NODE_ENV === 'test' ? '1 minute' : '1 second';
-type FeedbackTypeValue = (typeof FeedbackType)[keyof typeof FeedbackType];
 type ExecutionState = 'confirmed' | 'unconfirmed' | 'failed' | 'not-applicable';
 type ExecutionErrorTag = 'execution_reverted' | 'execution_timeout' | 'rpc_error' | 'signing_error' | 'nonce_persist_failed';
 const REPUTATION_MAX_RETRIES = 3;
@@ -48,58 +52,23 @@ function resolveAttestationScore(input: {
   return 40;
 }
 
-function resolveFeedback(input: {
+function resolveOutcome(input: {
   result: 'allow' | 'block';
   reason: string | null;
   executionState: ExecutionState;
-}): { score: number; feedbackType: FeedbackTypeValue; comment: string; signalType: SignalType } | null {
+}): EvaluationOutcome | null {
   if (input.result === 'allow') {
-    if (input.executionState === 'not-applicable') {
-      return {
-        score: 60,
-        feedbackType: FeedbackType.NEUTRAL,
-        comment: 'Trade allowed within policy bounds (no on-chain execution required)',
-        signalType: SignalType.POSITIVE,
-      };
-    }
-
-    if (input.executionState === 'confirmed') {
-      return {
-        score: 80,
-        feedbackType: FeedbackType.POSITIVE,
-        comment: 'Trade executed within policy bounds',
-        signalType: SignalType.POSITIVE,
-      };
-    }
-
-    if (input.executionState !== 'failed') return null;
-
-    return {
-      score: 50,
-      feedbackType: FeedbackType.NEUTRAL,
-      comment: 'Trade allowed but execution failed',
-      signalType: SignalType.POSITIVE,
-    };
+    if (input.executionState === 'confirmed') return 'allow_confirmed';
+    if (input.executionState === 'failed') return 'allow_execution_failed';
+    return null;
   }
 
-  const reason = input.reason ?? 'blocked by policy';
-  const normalized = reason.toLowerCase();
-
-  if (normalized.includes('riskrouter') || normalized.includes('hard limit')) {
-    return {
-      score: 10,
-      feedbackType: FeedbackType.NEGATIVE,
-      comment: `Trade blocked: RiskRouter hard limit exceeded (${reason})`,
-      signalType: SignalType.NEGATIVE,
-    };
+  const normalizedReason = (input.reason ?? '').toLowerCase();
+  if (normalizedReason.includes('riskrouter') || normalizedReason.includes('hard limit')) {
+    return 'block_risk_router';
   }
 
-  return {
-    score: 20,
-    feedbackType: FeedbackType.NEGATIVE,
-    comment: `Trade blocked: ${reason}`,
-    signalType: SignalType.NEGATIVE,
-  };
+  return 'block_policy_violation';
 }
 
 async function logReputationAttempt(input: {
@@ -124,7 +93,7 @@ async function logReputationAttempt(input: {
 }
 
 function toOutcomeRef(evaluationId: string): `0x${string}` {
-  return keccak256(toHex(evaluationId));
+  return keccak256(toBytes(evaluationId));
 }
 
 async function persistValidationEmission(input: {
@@ -421,13 +390,16 @@ export async function evaluateRoutes(app: FastifyInstance) {
 
           if (alreadyEmittedSignal) return;
 
-          const feedback = resolveFeedback({
+          const outcome = resolveOutcome({
             result: response.result,
             reason: response.reason,
             executionState,
           });
 
-          if (!feedback) return;
+          if (!outcome) return;
+
+          const feedback = resolveReputationPayload(outcome);
+          const signalType = outcome.startsWith('allow') ? SignalType.POSITIVE : SignalType.NEGATIVE;
 
           let reputationTxHash: `0x${string}` | null = null;
           let reputationFailureMessage: string | null = null;
@@ -454,12 +426,12 @@ export async function evaluateRoutes(app: FastifyInstance) {
                 update: {
                   txHash: reputationTxHash,
                   scoreSnapshot: feedback.score,
-                  signalType: feedback.signalType,
+                  signalType,
                   emittedAt: new Date(),
                 },
                 create: {
                   agentId: body.data.agent_id,
-                  signalType: feedback.signalType,
+                  signalType,
                   cycleId: response.evaluation_id,
                   txHash: reputationTxHash,
                   scoreSnapshot: feedback.score,
@@ -479,6 +451,22 @@ export async function evaluateRoutes(app: FastifyInstance) {
             } catch (reputationErr) {
               const errorMessage = reputationErr instanceof Error ? reputationErr.message : 'Unknown reputation emission error';
               reputationFailureMessage = errorMessage;
+
+              if (reputationErr instanceof AlreadyRatedError) {
+                app.log.warn(
+                  { evaluation_id: response.evaluation_id, error: errorMessage },
+                  'submitFeedback skipped — hasRated() returned true',
+                );
+
+                await logReputationAttempt({
+                  evaluationId: response.evaluation_id,
+                  agentId: body.data.agent_id,
+                  attempt,
+                  status: 'success',
+                });
+
+                break;
+              }
 
               await logReputationAttempt({
                 evaluationId: response.evaluation_id,

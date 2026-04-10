@@ -1,0 +1,62 @@
+[
+  {
+    "name": "submitFeedback",
+    "type": "function",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "agentId", "type": "uint256" },
+      { "name": "score", "type": "uint8" },
+      { "name": "outcomeRef", "type": "bytes32" },
+      { "name": "comment", "type": "string" },
+      { "name": "feedbackType", "type": "uint8" }
+    ],
+    "outputs": []
+  },
+  {
+    "name": "hasRated",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [
+      { "name": "agentId", "type": "uint256" },
+      { "name": "rater", "type": "address" }
+    ],
+    "outputs": [{ "name": "", "type": "bool" }]
+  },
+  {
+    "name": "getAverageScore",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [{ "name": "agentId", "type": "uint256" }],
+    "outputs": [{ "name": "", "type": "uint256" }]
+  },
+  {
+    "name": "getFeedbackHistory",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [{ "name": "agentId", "type": "uint256" }],
+    "outputs": [
+      {
+        "type": "tuple[]",
+        "components": [
+          { "name": "rater", "type": "address" },
+          { "name": "score", "type": "uint8" },
+          { "name": "outcomeRef", "type": "bytes32" },
+          { "name": "comment", "type": "string" },
+          { "name": "timestamp", "type": "uint256" },
+          { "name": "feedbackType", "type": "uint8" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "reputation",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [{ "name": "", "type": "uint256" }],
+    "outputs": [
+      { "name": "totalScore", "type": "uint256" },
+      { "name": "feedbackCount", "type": "uint256" },
+      { "name": "lastUpdated", "type": "uint256" }
+    ]
+  }
+]

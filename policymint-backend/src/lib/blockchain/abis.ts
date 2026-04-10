@@ -113,6 +113,16 @@ export const REPUTATION_REGISTRY_ABI = [
     inputs: [{ name: 'agentId', type: 'uint256' }],
     outputs: [{ name: 'score', type: 'uint256' }],
   },
+  {
+    name: 'hasRated',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'rater', type: 'address' },
+    ],
+    outputs: [{ name: '', type: 'bool' }],
+  },
 ] as const;
 
 export const RISK_ROUTER_ABI = [

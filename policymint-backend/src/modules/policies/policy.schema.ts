@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
-const MAX_SPEND_CAP_USD = 450;
-const MAX_DAILY_LOSS_PERCENT = 4;
+export const POLICY_LIMITS = {
+  MAX_SPEND_CAP_USD: 450,
+  MAX_TRADES_PER_HOUR: 8,
+  MAX_DAILY_LOSS_PCT: 4,
+  DEFAULT_SLIPPAGE_BPS: 50,
+  MAX_SLIPPAGE_BPS: 200,
+} as const;
 
 const VenueAllowlistPolicySchema = z.object({
   agentId: z.string().uuid(),
@@ -17,9 +22,15 @@ const SpendCapPolicySchema = z.object({
   type: z.literal('SPEND_CAP_PER_TX'),
   params: z.object({
     max_amount_wei: z.string().regex(/^[0-9]+$/),
-    max_amount_usd: z.number().positive().max(MAX_SPEND_CAP_USD).default(MAX_SPEND_CAP_USD),
+    max_amount_usd: z.number().positive().max(POLICY_LIMITS.MAX_SPEND_CAP_USD).default(POLICY_LIMITS.MAX_SPEND_CAP_USD),
+    max_slippage_bps: z
+      .number()
+      .int()
+      .min(1)
+      .max(POLICY_LIMITS.MAX_SLIPPAGE_BPS)
+      .default(POLICY_LIMITS.DEFAULT_SLIPPAGE_BPS),
   }).passthrough().refine(
-    params => params.max_amount_usd <= MAX_SPEND_CAP_USD,
+    params => params.max_amount_usd <= POLICY_LIMITS.MAX_SPEND_CAP_USD,
     {
       message: 'spend_cap_per_tx cannot exceed $450 — RiskRouter hard limit is $500',
       path: ['max_amount_usd'],
@@ -33,9 +44,9 @@ const DailyLossPolicySchema = z.object({
   type: z.literal('DAILY_LOSS_BUDGET'),
   params: z.object({
     max_daily_loss_wei: z.string().regex(/^[0-9]+$/),
-    max_daily_loss_percent: z.number().positive().max(MAX_DAILY_LOSS_PERCENT).default(MAX_DAILY_LOSS_PERCENT),
+    max_daily_loss_percent: z.number().positive().max(POLICY_LIMITS.MAX_DAILY_LOSS_PCT).default(POLICY_LIMITS.MAX_DAILY_LOSS_PCT),
   }).passthrough().refine(
-    params => params.max_daily_loss_percent <= MAX_DAILY_LOSS_PERCENT,
+    params => params.max_daily_loss_percent <= POLICY_LIMITS.MAX_DAILY_LOSS_PCT,
     {
       message: 'daily_loss_budget cannot exceed 4% — RiskRouter hard limit is 5%',
       path: ['max_daily_loss_percent'],

@@ -1,6 +1,6 @@
 export const REPUTATION_REGISTRY_ABI = [
   {
-    name: 'getScore',
+    name: 'getAverageScore',
     type: 'function',
     stateMutability: 'view',
     inputs: [{ name: 'agentId', type: 'uint256' }],
