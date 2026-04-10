@@ -164,10 +164,10 @@ describe('StrategyLoop PRISM mode', () => {
     const { PRISMAPIError } = await import('../strategy/prism-signal-provider.js');
     const provider = createProvider();
     provider.getSignal
-      .mockRejectedValueOnce(new PRISMAPIError('upstream failure', 502))
-      .mockRejectedValueOnce(new PRISMAPIError('upstream failure', 502))
-      .mockRejectedValueOnce(new PRISMAPIError('upstream failure', 502))
-      .mockRejectedValueOnce(new PRISMAPIError('upstream failure', 502))
+      .mockRejectedValueOnce(new PRISMAPIError('upstream failure', 502, '/signals/BTC%2FUSD'))
+      .mockRejectedValueOnce(new PRISMAPIError('upstream failure', 502, '/signals/BTC%2FUSD'))
+      .mockRejectedValueOnce(new PRISMAPIError('upstream failure', 502, '/signals/BTC%2FUSD'))
+      .mockRejectedValueOnce(new PRISMAPIError('upstream failure', 502, '/signals/BTC%2FUSD'))
       .mockResolvedValueOnce({ direction: 'neutral', confidence: 0.9 });
     const logger = createLogger();
     const { StrategyLoop } = await import('./loop.js');
