@@ -11,8 +11,10 @@ const BLOCKED_TRADE_ASSUMED_LOSS_RATE = 0.04;
 
 type ConsoleErrorCode =
   | 'AGENT_NOT_FOUND'
-  | 'AUTH_REQUIRED'
-  | 'FORBIDDEN'
+  | 'TOKEN_MISSING'
+  | 'TOKEN_INVALID'
+  | 'TOKEN_EXPIRED'
+  | 'AGENT_SCOPE_VIOLATION'
   | 'INVALID_WINDOW'
   | 'INVALID_CURSOR'
   | 'COMPETITION_WINDOW_NOT_CONFIGURED'
@@ -261,13 +263,13 @@ function buildPnlSeries(input: {
 }
 
 async function requireScopedAgent(request: FastifyRequest, reply: FastifyReply, targetAgentId: string) {
-  if (!request.agent) {
-    sendError(reply, 401, 'AUTH_REQUIRED', 'Missing or invalid API key');
+  if (!request.operatorContext) {
+    sendError(reply, 401, 'TOKEN_MISSING', 'Missing or invalid operator token');
     return null;
   }
 
-  if (request.agent.id !== targetAgentId) {
-    sendError(reply, 403, 'FORBIDDEN', 'API key is not scoped to the requested agent');
+  if (!request.operatorContext.agentIds.includes(targetAgentId)) {
+    sendError(reply, 403, 'AGENT_SCOPE_VIOLATION', 'Operator token is not scoped to the requested agent');
     return null;
   }
 

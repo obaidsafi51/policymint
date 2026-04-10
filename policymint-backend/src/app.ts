@@ -11,7 +11,9 @@ import { policyRoutes } from './modules/policies/policy.routes.js';
 import { evaluateRoutes } from './modules/policy-engine/evaluate.route.js';
 import { evaluationTxHashRoutes } from './modules/policy-engine/evaluation-tx-hash.route.js';
 import { apiKeyAuth } from './plugins/auth.js';
+import { operatorJwtAuth } from './plugins/operator-auth.js';
 import { consoleRoutes } from './modules/console/console.routes.js';
+import { operatorAuthRoutes } from './modules/auth/operator-auth.routes.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -32,6 +34,7 @@ export async function buildApp() {
   await app.register(cors, {
     origin: env.NODE_ENV === 'production' ? ['https://policymint.vercel.app'] : true,
     credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Operator-Token'],
   });
 
   await app.register(rateLimit, {
@@ -66,14 +69,19 @@ export async function buildApp() {
   });
 
   await app.register(healthRoutes);
+  await app.register(operatorAuthRoutes, { prefix: '/auth' });
   await app.register(agentRoutes, { prefix: '/v1/agents' });
   await app.register(evaluateRoutes, { prefix: '/v1' });
   await app.register(evaluationTxHashRoutes, { prefix: '/v1' });
-  await app.register(async (protectedApp) => {
-    protectedApp.addHook('preHandler', apiKeyAuth);
-    await protectedApp.register(agentProtectedRoutes, { prefix: '/v1/agents' });
-    await protectedApp.register(consoleRoutes, { prefix: '/v1/agents' });
-    await protectedApp.register(policyRoutes, { prefix: '/v1/policies' });
+  await app.register(async (apiKeyProtectedApp) => {
+    apiKeyProtectedApp.addHook('preHandler', apiKeyAuth);
+    await apiKeyProtectedApp.register(agentProtectedRoutes, { prefix: '/v1/agents' });
+    await apiKeyProtectedApp.register(policyRoutes, { prefix: '/v1/policies' });
+  });
+
+  await app.register(async (operatorProtectedApp) => {
+    operatorProtectedApp.addHook('preHandler', operatorJwtAuth);
+    await operatorProtectedApp.register(consoleRoutes, { prefix: '/v1/agents' });
   });
 
   return app;

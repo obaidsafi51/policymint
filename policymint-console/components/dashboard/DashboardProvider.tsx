@@ -1,9 +1,11 @@
 'use client';
 
-import { createContext, ReactNode, useContext, useMemo, useState } from 'react';
+import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import { useIsFetching, useQueryClient } from '@tanstack/react-query';
+import { usePathname, useRouter } from 'next/navigation';
 import { PerformanceWindow } from '@/hooks/usePnL';
 import { DEFAULT_AGENT_ID } from '@/lib/constants';
+import { useAuth } from '@/hooks/useAuth';
 
 type DashboardContextValue = {
   agentId: string;
@@ -21,24 +23,55 @@ interface DashboardProviderProps {
 }
 
 export function DashboardProvider({ children, agentId = DEFAULT_AGENT_ID }: DashboardProviderProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { agentIds } = useAuth();
   const queryClient = useQueryClient();
   const [window, setWindow] = useState<PerformanceWindow>('competition');
-  const isRefreshing = useIsFetching({ queryKey: ['agent', agentId] }) > 0;
+
+  const routeAgentId = useMemo(() => {
+    const segments = pathname.split('/').filter(Boolean);
+    if (segments.length >= 2 && segments[0] === 'dashboard') {
+      return segments[1];
+    }
+    return null;
+  }, [pathname]);
+
+  const resolvedAgentId = routeAgentId ?? agentId;
+  const isRefreshing = useIsFetching({ queryKey: ['agent', resolvedAgentId] }) > 0;
+
+  useEffect(() => {
+    if (agentIds.length === 0) {
+      if (pathname.startsWith('/dashboard')) {
+        router.replace('/onboarding');
+      }
+      return;
+    }
+
+    if (pathname === '/dashboard') {
+      router.replace(`/dashboard/${agentIds[0]}`);
+      return;
+    }
+
+    if (routeAgentId && !agentIds.includes(routeAgentId)) {
+      router.replace(`/dashboard/${agentIds[0]}`);
+    }
+  }, [agentIds, pathname, routeAgentId, router]);
 
   async function refreshAll() {
-    await queryClient.invalidateQueries({ queryKey: ['agent', agentId] });
-    await queryClient.refetchQueries({ queryKey: ['agent', agentId], type: 'active' });
+    await queryClient.invalidateQueries({ queryKey: ['agent', resolvedAgentId] });
+    await queryClient.refetchQueries({ queryKey: ['agent', resolvedAgentId], type: 'active' });
   }
 
   const value = useMemo(
     () => ({
-      agentId,
+      agentId: resolvedAgentId,
       window,
       setWindow,
       refreshAll,
       isRefreshing,
     }),
-    [agentId, window, isRefreshing],
+    [resolvedAgentId, window, isRefreshing],
   );
 
   return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>;
