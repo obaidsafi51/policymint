@@ -2,14 +2,14 @@
 
 import Image from 'next/image';
 import { Plus } from 'lucide-react';
+import { useDashboardContext } from '@/components/dashboard/DashboardProvider';
 import { DrawdownChart } from '@/components/dashboard/DrawdownChart';
 import { MetricTileGrid } from '@/components/dashboard/MetricTileGrid';
 import { PnLChart } from '@/components/dashboard/PnLChart';
 import { ReputationPanel } from '@/components/dashboard/ReputationPanel';
-import { useAgent } from '@/hooks/useAgent';
 import { usePnL } from '@/hooks/usePnL';
-import { useReputationScore } from '@/hooks/useReputationScore';
-import { DEFAULT_AGENT_ID } from '@/lib/constants';
+import { useDrawdown } from '@/hooks/useDrawdown';
+import { useAgentStats } from '@/hooks/useAgentStats';
 import { formatNumber, formatUsd } from '@/lib/formatAmount';
 
 const topAuditRows = [
@@ -19,13 +19,18 @@ const topAuditRows = [
   { time: '14:21:30', code: 'POL-0012', text: 'Epoch 102 transition complete', status: 'SUCCESS', hash: '0x...8a23' },
 ];
 export function DashboardView() {
-  const { agent } = useAgent(DEFAULT_AGENT_ID);
-  const { pnlData, drawdownData, stats } = usePnL(agent?.agent_id ?? DEFAULT_AGENT_ID);
-  const { score } = useReputationScore(agent?.erc8004_token_id ?? '1');
+  const { agentId, window, refreshAll, isRefreshing } = useDashboardContext();
 
-  const pnlLatest = pnlData[pnlData.length - 1]?.pnl ?? 0;
-  const drawdownPct = -2.4;
-  const decisionsToday = stats.tradesToday;
+  const { series: pnlData, currentPnl } = usePnL(agentId, window);
+  const { drawdownData, preventionValueUsd, preventionPct } = useDrawdown(agentId, window);
+  const { stats } = useAgentStats(agentId);
+
+  const score = stats?.reputation_score ?? 780;
+
+  const pnlLatest = pnlData[pnlData.length - 1]?.pnl ?? currentPnl;
+  const drawdownPct = -(stats?.current_drawdown_pct ?? 2.4);
+  const decisionsToday = stats?.total_evaluations ?? 0;
+  const blocksToday = stats?.block_count ?? 0;
 
   const compliance = Math.max(0, Math.min(100, 95 + score / 20));
 
@@ -39,6 +44,15 @@ export function DashboardView() {
         <button className="inline-flex items-center gap-2 self-start rounded-xl bg-[var(--text-brand)] px-4 py-2 text-sm font-semibold text-[var(--text-on-brand)] hover:opacity-90">
           <Plus size={14} />
           Deploy Agent
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            void refreshAll();
+          }}
+          className="inline-flex items-center gap-2 self-start rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] px-4 py-2 text-sm font-semibold text-[var(--text-primary)] hover:text-[var(--text-brand)]"
+        >
+          {isRefreshing ? 'Refreshing…' : 'Refresh All'}
         </button>
       </section>
 
@@ -172,7 +186,7 @@ export function DashboardView() {
           reputation={score}
           pnlLatest={pnlLatest}
           tradesToday={decisionsToday}
-          blocksToday={stats.blocksToday}
+          blocksToday={blocksToday}
         />
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
           <div className="xl:col-span-12">
@@ -191,7 +205,7 @@ export function DashboardView() {
         <article className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
           <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-[var(--text-tertiary)]">Cumulative PnL</span>
           <p className="mt-2 font-mono text-3xl font-bold text-[var(--text-brand)]">{formatUsd(pnlLatest)}</p>
-          <p className="mt-1 text-xs text-[var(--text-secondary)]">+12.4% from start</p>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">{preventionPct.toFixed(2)}% prevention delta</p>
         </article>
         <article className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
           <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-[var(--text-tertiary)]">Reputation score</span>
@@ -206,7 +220,7 @@ export function DashboardView() {
         <article className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
           <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-[var(--text-tertiary)]">Decisions today</span>
           <p className="mt-2 font-mono text-3xl font-bold text-[var(--text-primary)]">{formatNumber(decisionsToday)}</p>
-          <p className="mt-1 text-xs text-[var(--text-secondary)]">{stats.blocksToday} blocked</p>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">{blocksToday} blocked • {formatUsd(preventionValueUsd)} saved</p>
         </article>
       </section>
     </div>

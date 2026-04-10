@@ -51,7 +51,7 @@ export type AgentPnlSeriesPoint = {
 };
 
 export type AgentPnlResponse = ConsoleApiSuccessEnvelope<{
-  window: 'competition' | '24h' | '7d';
+  window: 'competition' | '1h' | '24h' | '7d';
   start_at: string;
   end_at: string;
   baseline_allocation_usd: number;

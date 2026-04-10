@@ -14,8 +14,8 @@ Next.js 15 operator console frontend for PolicyMint.
 
 - App Router layout shell with sidebar, topbar, dashboard, and simulate screen
 - Design tokens from `DESIGN.md` wired in `styles/globals.css`
-- SWR hooks for agent, PnL, drawdown, stats, and decision feed
-- SSE decision feed with 10s polling fallback
+- React Query hooks for decision feed, PnL, drawdown, and stats (10s/30s/15s polling)
+- Shared API client for auth header + response envelope unwrapping + typed error codes
 - On-chain reads via `viem` (`ReputationRegistry.getAverageScore`, `RiskRouter.simulateIntent`)
 - Simulate flow: on-chain dry run before backend `POST /v1/evaluate`
 - Mock/demo mode fallback when `NEXT_PUBLIC_API_URL` is not set

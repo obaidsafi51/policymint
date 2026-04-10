@@ -7,7 +7,31 @@ function toHexHash(seed: number): string {
   return `0x${seed.toString(16).padStart(64, '0')}`;
 }
 
+async function assertConsoleSeedSchema() {
+  const executionTxHashColumn = await prisma.$queryRaw<Array<{ present: number }>>`
+    SELECT 1 AS present
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'intent_evaluations'
+      AND column_name = 'execution_tx_hash'
+    LIMIT 1
+  `;
+
+  if (executionTxHashColumn.length === 0) {
+    throw new Error(
+      [
+        'Database schema is behind Prisma schema: missing column intent_evaluations.execution_tx_hash.',
+        'Run migrations first, then re-run console seed.',
+        'From policymint-backend: npm run db:migrate:deploy',
+        'Then: npm run db:seed:console',
+      ].join('\n'),
+    );
+  }
+}
+
 async function main() {
+  await assertConsoleSeedSchema();
+
   const agent = await prisma.agent.findFirst({
     orderBy: { createdAt: 'asc' },
     select: { id: true, erc8004TokenId: true },
