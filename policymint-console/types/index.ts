@@ -50,3 +50,5 @@ export interface PolicyChecklistItem {
   state: 'pass' | 'fail' | 'skipped'
   detail: string
 }
+
+export * from './console-api'

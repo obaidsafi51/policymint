@@ -1,0 +1,457 @@
+openapi: 3.0.3
+info:
+  title: PolicyMint Console API (Phase 1)
+  version: 1.0.0
+paths:
+  /v1/agents/{id}/events:
+    get:
+      summary: Paginated reverse-chronological policy decision feed
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: result
+          schema:
+            type: string
+            enum: [allow, block]
+      responses:
+        '200':
+          description: Decision feed page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventsResponse'
+        '400':
+          description: Invalid cursor/query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Auth required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/agents/{id}/pnl:
+    get:
+      summary: Agent cumulative PnL series by window
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: window
+          schema:
+            type: string
+            enum: [competition, 24h, 7d]
+            default: competition
+      responses:
+        '200':
+          description: PnL series
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PnlResponse'
+        '400':
+          description: Invalid/missing window configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Auth required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/agents/{id}/drawdown-comparison:
+    get:
+      summary: Protected vs unprotected simulated drawdown comparison
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: window
+          schema:
+            type: string
+            enum: [competition, 24h, 7d]
+            default: competition
+      responses:
+        '200':
+          description: Comparison series and prevention value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DrawdownComparisonResponse'
+        '400':
+          description: Invalid/missing window configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Auth required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/agents/{id}/stats:
+    get:
+      summary: Agent aggregate KPI summary
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Stats payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+        '401':
+          description: Auth required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    Meta:
+      type: object
+      required: [agent_id, generated_at]
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        generated_at:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - AGENT_NOT_FOUND
+                - AUTH_REQUIRED
+                - FORBIDDEN
+                - INVALID_WINDOW
+                - INVALID_CURSOR
+                - COMPETITION_WINDOW_NOT_CONFIGURED
+                - INTERNAL_ERROR
+            message:
+              type: string
+
+    EventItem:
+      type: object
+      required:
+        - evaluation_id
+        - result
+        - policy_id
+        - action_type
+        - venue
+        - amount_usd
+        - validation_tx_hash
+        - etherscan_url
+        - timestamp
+      properties:
+        evaluation_id:
+          type: string
+          format: uuid
+        result:
+          type: string
+          enum: [allow, block]
+        reason:
+          type: string
+          nullable: true
+        policy_id:
+          type: string
+          format: uuid
+          nullable: true
+        action_type:
+          type: string
+        venue:
+          type: string
+        amount_usd:
+          type: number
+        validation_tx_hash:
+          type: string
+          nullable: true
+        etherscan_url:
+          type: string
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+
+    EventsResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          type: object
+          required: [events, next_cursor]
+          properties:
+            events:
+              type: array
+              items:
+                $ref: '#/components/schemas/EventItem'
+            next_cursor:
+              type: string
+              nullable: true
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    PnlSeriesPoint:
+      type: object
+      required: [timestamp, cumulative_pnl_usd, trade_count]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        cumulative_pnl_usd:
+          type: number
+        trade_count:
+          type: integer
+
+    DrawdownSeriesPoint:
+      type: object
+      required: [timestamp, cumulative_pnl_usd]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        cumulative_pnl_usd:
+          type: number
+
+    PnlResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          type: object
+          required:
+            - window
+            - start_at
+            - end_at
+            - baseline_allocation_usd
+            - current_pnl_usd
+            - pnl_pct
+            - trade_count
+            - series
+          properties:
+            window:
+              type: string
+              enum: [competition, 24h, 7d]
+            start_at:
+              type: string
+              format: date-time
+            end_at:
+              type: string
+              format: date-time
+            baseline_allocation_usd:
+              type: number
+            current_pnl_usd:
+              type: number
+            pnl_pct:
+              type: number
+            trade_count:
+              type: integer
+            series:
+              type: array
+              items:
+                $ref: '#/components/schemas/PnlSeriesPoint'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    DrawdownComparisonResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          type: object
+          required:
+            - protected_series
+            - baseline_series
+            - prevention_value_usd
+            - prevention_value_pct
+            - blocked_trade_count
+            - simulation_disclaimer
+          properties:
+            protected_series:
+              type: array
+              items:
+                $ref: '#/components/schemas/DrawdownSeriesPoint'
+            baseline_series:
+              type: array
+              items:
+                $ref: '#/components/schemas/DrawdownSeriesPoint'
+            prevention_value_usd:
+              type: number
+            prevention_value_pct:
+              type: number
+            blocked_trade_count:
+              type: integer
+            simulation_disclaimer:
+              type: string
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    StatsResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          type: object
+          required:
+            - total_evaluations
+            - allow_count
+            - block_count
+            - block_rate_pct
+            - execution_success_rate
+            - emission_success_rate
+            - reputation_score
+            - score_trend
+            - sharpe_ratio
+            - sharpe_data_quality
+            - current_drawdown_pct
+            - policy_breach
+            - breach_reason
+            - competition_window_start
+          properties:
+            total_evaluations:
+              type: integer
+            allow_count:
+              type: integer
+            block_count:
+              type: integer
+            block_rate_pct:
+              type: number
+            execution_success_rate:
+              type: number
+            emission_success_rate:
+              type: number
+            reputation_score:
+              type: number
+            score_trend:
+              type: string
+              enum: [up, down, stable]
+            sharpe_ratio:
+              type: number
+              nullable: true
+            sharpe_data_quality:
+              type: string
+              enum: [ok, insufficient_data]
+            current_drawdown_pct:
+              type: number
+            policy_breach:
+              type: boolean
+            breach_reason:
+              type: string
+              nullable: true
+            competition_window_start:
+              type: string
+              format: date-time
+              nullable: true
+        meta:
+          $ref: '#/components/schemas/Meta'

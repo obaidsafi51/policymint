@@ -53,6 +53,8 @@ const EnvSchema = z.object({
   STRATEGY_TICK_INTERVAL_MS: z.coerce.number().int().positive().default(450000),
   STRATEGY_TRADE_AMOUNT_USD: z.coerce.number().positive().max(450).default(100),
   AGENT_ID: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  COMPETITION_WINDOW_START_AT: z.preprocess(emptyToUndefined, z.string().datetime().optional()),
+  HACKATHON_BASELINE_ALLOCATION_USD: z.coerce.number().nonnegative().default(150),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
