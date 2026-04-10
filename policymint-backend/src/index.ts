@@ -3,7 +3,7 @@ import { StrategyLoop } from './agent/loop.js';
 import { env } from './config/env.js';
 import { validateStartupConfiguration } from './config/startup.js';
 import { prisma } from './db/client.js';
-import { registerAgentOnChain } from './lib/blockchain/agentRegistry.js';
+import { findRegisteredAgentByWallet, registerAgentOnChain } from './lib/blockchain/agentRegistry.js';
 import { claimHackathonAllocation } from './lib/blockchain/hackathonVault.js';
 import { getRiskRouterIntentNonce } from './lib/blockchain/riskRouter.js';
 import {
@@ -13,6 +13,20 @@ import {
   CANONICAL_AGENT_NAME,
 } from './modules/agents/registration.constants.js';
 import { captureErrorToSentry } from './lib/telemetry.js';
+
+function isAgentAlreadyRegisteredError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const errorWithFields = error as Error & { shortMessage?: unknown; details?: unknown };
+  const context = [error.message, errorWithFields.shortMessage, errorWithFields.details]
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .join(' ')
+    .toLowerCase();
+
+  return context.includes('agentwallet already registered') || context.includes('already registered');
+}
 
 async function ensureStartupAgentRegistered(agentUuid: string, appLog: { info: Function; warn: Function; error: Function }) {
   const agent = await prisma.agent.findUnique({
@@ -52,12 +66,37 @@ async function ensureStartupAgentRegistered(agentUuid: string, appLog: { info: F
 
   const frontendUrl = process.env.POLICYMINT_FRONTEND_URL ?? 'https://your-vercel-frontend-url.vercel.app';
   const agentURI = buildCanonicalAgentURI(frontendUrl);
-  const { agentId, txHash } = await registerAgentOnChain({
-    name: CANONICAL_AGENT_NAME,
-    description: CANONICAL_AGENT_DESCRIPTION,
-    capabilities: [...CANONICAL_AGENT_CAPABILITIES],
-    agentURI,
-  });
+  let agentId: bigint;
+  let txHash: `0x${string}` | null = null;
+
+  try {
+    const registration = await registerAgentOnChain({
+      name: CANONICAL_AGENT_NAME,
+      description: CANONICAL_AGENT_DESCRIPTION,
+      capabilities: [...CANONICAL_AGENT_CAPABILITIES],
+      agentURI,
+    });
+
+    agentId = registration.agentId;
+    txHash = registration.txHash;
+  } catch (error) {
+    if (!isAgentAlreadyRegisteredError(error)) {
+      throw error;
+    }
+
+    appLog.warn(
+      { agent_id: agentUuid },
+      'Agent wallet is already registered on-chain; resolving existing registration from logs',
+    );
+
+    const existingRegistration = await findRegisteredAgentByWallet();
+    if (!existingRegistration) {
+      throw error;
+    }
+
+    agentId = existingRegistration.agentId;
+    txHash = existingRegistration.txHash;
+  }
 
   await prisma.agent.update({
     where: { id: agentUuid },
@@ -73,7 +112,14 @@ async function ensureStartupAgentRegistered(agentUuid: string, appLog: { info: F
     data: { vaultClaimedAt: new Date() },
   });
 
-  appLog.info({ agent_id: agentUuid, token_id: agentId.toString(), tx_hash: txHash }, 'Startup on-chain registration and vault claim completed');
+  appLog.info(
+    {
+      agent_id: agentUuid,
+      token_id: agentId.toString(),
+      tx_hash: txHash,
+    },
+    'Startup on-chain registration and vault claim completed',
+  );
 }
 
 async function syncStartupNonceFromChain(agentUuid: string, appLog: { info: Function; warn: Function; error: Function }) {
