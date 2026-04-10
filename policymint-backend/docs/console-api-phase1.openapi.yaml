@@ -60,6 +60,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /v1/agents/{id}/pnl:
     get:
@@ -98,6 +104,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
           description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Agent not found
           content:
             application/json:
               schema:
@@ -293,6 +305,16 @@ components:
         trade_count:
           type: integer
 
+    DrawdownSeriesPoint:
+      type: object
+      required: [timestamp, cumulative_pnl_usd]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        cumulative_pnl_usd:
+          type: number
+
     PnlResponse:
       type: object
       required: [success, data, meta]
@@ -356,11 +378,11 @@ components:
             protected_series:
               type: array
               items:
-                $ref: '#/components/schemas/PnlSeriesPoint'
+                $ref: '#/components/schemas/DrawdownSeriesPoint'
             baseline_series:
               type: array
               items:
-                $ref: '#/components/schemas/PnlSeriesPoint'
+                $ref: '#/components/schemas/DrawdownSeriesPoint'
             prevention_value_usd:
               type: number
             prevention_value_pct:

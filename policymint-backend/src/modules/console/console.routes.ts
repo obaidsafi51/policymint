@@ -171,7 +171,10 @@ function parseCursor(cursorRaw: string): CursorShape | null {
   if (cursor.length === 0) return null;
 
   if (cursor.includes('|')) {
-    const [timestampRaw, id] = cursor.split('|');
+    const parts = cursor.split('|');
+    if (parts.length !== 2) return null;
+
+    const [timestampRaw, id] = parts;
     if (!timestampRaw || !id || !isUuid(id)) return null;
 
     const timestamp = new Date(timestampRaw);
@@ -730,8 +733,9 @@ export async function consoleRoutes(app: FastifyInstance) {
         }),
       ]);
 
+      const allowTradeCount = tradeRows.filter(row => row.result === EvaluationResult.ALLOW).length;
       const confirmedTradeRows = tradeRows.filter(row => row.result === EvaluationResult.ALLOW && isExecutionConfirmed(row as EvalRow));
-      const executionSuccessRate = allowCount > 0 ? (confirmedTradeRows.length / allowCount) * 100 : 0;
+      const executionSuccessRate = allowTradeCount > 0 ? (confirmedTradeRows.length / allowTradeCount) * 100 : 0;
       const emissionSuccessRate = totalEvaluations > 0 ? (emittedValidationCount.length / totalEvaluations) * 100 : 0;
       const blockRatePct = totalEvaluations > 0 ? (blockCount / totalEvaluations) * 100 : 0;
 
