@@ -61,7 +61,7 @@ describeDb('Nonce Atomicity Under Concurrent Ticks', () => {
         chainId: 11155111,
         verifyingContract: '0x1111111111111111111111111111111111111111'
       },
-      params: {},
+      params: { side: 'buy' },
       ...overrides
     };
   }

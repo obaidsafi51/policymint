@@ -58,7 +58,7 @@ describe('mapToRiskRouterIntent', () => {
         agentId: BigInt(42),
         agentWallet: '0x0000000000000000000000000000000000000002',
         pair: 'ETH/USD',
-        action: 'sell',
+        action: 'SELL',
         amountUsdScaled: BigInt(1_000_000),
         maxSlippageBps: BigInt(50),
         nonce: BigInt(7),
@@ -67,34 +67,32 @@ describe('mapToRiskRouterIntent', () => {
     expect(result.deadline).toBeGreaterThan(BigInt(Math.floor(Date.now() / 1000)));
   });
 
-  it('defaults action to buy and token_out to USD when side is missing', async () => {
+  it('throws when side is missing', async () => {
     const { mapToRiskRouterIntent } = await import('./trade-intent.mapper.js');
 
-    const result = await mapToRiskRouterIntent({
-      intent: {
-        agent_id: 'agent-1',
-        action_type: 'trade',
-        venue: 'kraken-spot',
-        amount: '1000000',
-        token_in: 'USD',
-        token_out: undefined,
-        eip712_domain: {
-          name: 'PolicyMint',
-          version: '1',
-          chainId: 11155111,
-          verifyingContract: '0x1111111111111111111111111111111111111111',
+    await expect(
+      mapToRiskRouterIntent({
+        intent: {
+          agent_id: 'agent-1',
+          action_type: 'trade',
+          venue: 'kraken-spot',
+          amount: '1000000',
+          token_in: 'USD',
+          token_out: undefined,
+          eip712_domain: {
+            name: 'PolicyMint',
+            version: '1',
+            chainId: 11155111,
+            verifyingContract: '0x1111111111111111111111111111111111111111',
+          },
+          params: {},
         },
-        params: {},
-      },
-      erc8004TokenId: '5',
-      agentWalletAddress: '0x0000000000000000000000000000000000000002',
-      nonce: BigInt(1),
-      defaultMaxSlippageBps: 35,
-    });
-
-    expect(result.action).toBe('buy');
-    expect(result.pair).toBe('USD/USD');
-    expect(result.maxSlippageBps).toBe(BigInt(35));
+        erc8004TokenId: '5',
+        agentWalletAddress: '0x0000000000000000000000000000000000000002',
+        nonce: BigInt(1),
+        defaultMaxSlippageBps: 35,
+      }),
+    ).rejects.toThrow('RiskRouter trade intents require params.side as buy or sell');
   });
 
   it('throws when max_slippage_bps exceeds backend ceiling', async () => {
