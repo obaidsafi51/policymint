@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { RegistryType } from '@prisma/client';
 import { z } from 'zod';
-import { keccak256, toHex } from 'viem';
+import { keccak256, toBytes } from 'viem';
 import { prisma } from '../../db/client.js';
 import { internalAuthHook } from '../../plugins/internal-auth.js';
 
@@ -95,7 +95,7 @@ export async function evaluationTxHashRoutes(app: FastifyInstance) {
 
     const evaluationId = parsedParams.data.id;
     const txHash = parsedBody.data.tx_hash;
-    const outcomeRef = keccak256(toHex(evaluationId));
+    const outcomeRef = keccak256(toBytes(evaluationId));
 
     const evaluation = await prisma.intentEvaluation.findUnique({
       where: { id: evaluationId },

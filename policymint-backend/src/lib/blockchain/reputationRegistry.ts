@@ -3,16 +3,25 @@ import { logger } from '../logger.js';
 import { REPUTATION_REGISTRY_ABI } from './abis.js';
 import { operatorAccount, operatorWalletClient, publicClient } from './client.js';
 import { txQueue } from './txQueue.js';
+import type { Address } from 'viem';
 
 const REPUTATION_REGISTRY = env.REPUTATION_REGISTRY_ADDRESS as `0x${string}` | undefined;
 
 export const FeedbackType = {
-  POSITIVE: 1,
-  NEUTRAL: 2,
-  NEGATIVE: 3,
+  TRADE_EXECUTION: 0,
+  RISK_MANAGEMENT: 1,
+  STRATEGY_QUALITY: 2,
+  GENERAL: 3,
 } as const;
 
-type FeedbackTypeValue = (typeof FeedbackType)[keyof typeof FeedbackType];
+export type FeedbackTypeValue = (typeof FeedbackType)[keyof typeof FeedbackType];
+
+export class AlreadyRatedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AlreadyRatedError';
+  }
+}
 
 export interface EmitSignalParams {
   agentId: bigint;
@@ -26,6 +35,19 @@ export function canEmitReputationSignalOnChain() {
   return Boolean(REPUTATION_REGISTRY);
 }
 
+export async function hasRated(agentId: bigint, raterAddress: Address): Promise<boolean> {
+  if (!REPUTATION_REGISTRY) {
+    throw new Error('REPUTATION_REGISTRY_ADDRESS missing; reputation reads are disabled');
+  }
+
+  return publicClient.readContract({
+    address: REPUTATION_REGISTRY,
+    abi: REPUTATION_REGISTRY_ABI,
+    functionName: 'hasRated',
+    args: [agentId, raterAddress],
+  });
+}
+
 export async function emitReputationSignal(params: EmitSignalParams): Promise<`0x${string}`> {
   if (!REPUTATION_REGISTRY) {
     throw new Error('REPUTATION_REGISTRY_ADDRESS missing; reputation emission is disabled');
@@ -37,7 +59,7 @@ export async function emitReputationSignal(params: EmitSignalParams): Promise<`0
 
   if (!Object.values(FeedbackType).includes(params.feedbackType)) {
     throw new Error(
-      `ReputationRegistry.submitFeedback() feedbackType must be one of 1,2,3. Received ${params.feedbackType}`,
+      `ReputationRegistry.submitFeedback() feedbackType must be one of 0,1,2,3. Received ${params.feedbackType}`,
     );
   }
 
@@ -50,6 +72,13 @@ export async function emitReputationSignal(params: EmitSignalParams): Promise<`0
     },
     'Submitting submitFeedback',
   );
+
+  const alreadyRated = await hasRated(params.agentId, operatorAccount.address);
+  if (alreadyRated) {
+    throw new AlreadyRatedError(
+      `ReputationRegistry.submitFeedback() skipped: operator ${operatorAccount.address} already rated agent ${params.agentId.toString()}`,
+    );
+  }
 
   const txHash = await txQueue.add(() =>
     operatorWalletClient.writeContract({

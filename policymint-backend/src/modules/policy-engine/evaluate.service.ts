@@ -8,6 +8,7 @@ import { evaluateDailyLossBudget } from './evaluators/daily-loss-budget.js';
 import { evaluateSpendCapPerTx } from './evaluators/spend-cap-per-tx.js';
 import { evaluateVenueAllowlist, type EvaluatorResult } from './evaluators/venue-allowlist.js';
 import { mapToRiskRouterIntent, type RiskRouterTradeIntent } from './trade-intent.mapper.js';
+import { POLICY_LIMITS } from '../policies/policy.schema.js';
 
 interface EvaluateIntentResponse {
   result: 'allow' | 'block';
@@ -18,8 +19,8 @@ interface EvaluateIntentResponse {
   riskIntentForExecution: RiskRouterTradeIntent | null;
 }
 
-const MAX_ALLOWED_TRADES_PER_HOUR = 8;
-const MAX_ALLOWED_SLIPPAGE_BPS = 200;
+const MAX_ALLOWED_TRADES_PER_HOUR = POLICY_LIMITS.MAX_TRADES_PER_HOUR;
+const MAX_ALLOWED_SLIPPAGE_BPS = POLICY_LIMITS.MAX_SLIPPAGE_BPS;
 const MAX_NONCE_ALLOCATION_ATTEMPTS = 5;
 
 function fallbackRiskIntent(intent: EvaluateIntentInput) {
@@ -33,6 +34,23 @@ function fallbackRiskIntent(intent: EvaluateIntentInput) {
     nonce: BigInt(0),
     deadline: BigInt(Math.floor(Date.now() / 1_000) + 300),
   };
+}
+
+function getPolicyMaxSlippageBps(activePolicies: Array<{ type: PolicyType; params: Prisma.JsonValue }>): number {
+  const spendCapPolicy = activePolicies.find(policy => policy.type === 'SPEND_CAP_PER_TX');
+  if (!spendCapPolicy || !spendCapPolicy.params || typeof spendCapPolicy.params !== 'object') {
+    return POLICY_LIMITS.DEFAULT_SLIPPAGE_BPS;
+  }
+
+  const candidate = Number(
+    (spendCapPolicy.params as Record<string, unknown>).max_slippage_bps ?? Number.NaN,
+  );
+
+  if (!Number.isFinite(candidate)) {
+    return POLICY_LIMITS.DEFAULT_SLIPPAGE_BPS;
+  }
+
+  return Math.max(1, Math.min(Math.floor(candidate), POLICY_LIMITS.MAX_SLIPPAGE_BPS));
 }
 
 export class EvaluationServiceError extends Error {
@@ -224,6 +242,7 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
 
     let previousNonce = typeof agent.lastNonce === 'bigint' ? agent.lastNonce : BigInt(agent.lastNonce);
     let allocationSucceeded = false;
+    const policyMaxSlippageBps = getPolicyMaxSlippageBps(activePolicies);
 
     for (let attempt = 0; attempt < MAX_NONCE_ALLOCATION_ATTEMPTS; attempt += 1) {
       const candidateNonce = previousNonce + 1n;
@@ -232,7 +251,7 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
         erc8004TokenId: agent.erc8004TokenId,
         agentWalletAddress: agentAccount.address,
         nonce: candidateNonce,
-        defaultMaxSlippageBps: 50,
+        defaultMaxSlippageBps: policyMaxSlippageBps,
       });
 
       const candidateSignature = await signEvaluatedIntent({ intent: candidateRiskIntent });

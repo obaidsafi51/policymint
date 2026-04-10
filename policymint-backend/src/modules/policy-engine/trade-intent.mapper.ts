@@ -1,5 +1,6 @@
 import { env } from '../../config/env.js';
 import { publicClient } from '../../lib/blockchain/client.js';
+import { POLICY_LIMITS } from '../policies/policy.schema.js';
 import type { EvaluateIntentInput } from './evaluate.schema.js';
 
 export interface RiskRouterTradeIntent {
@@ -41,7 +42,6 @@ const TOKEN_TO_KRAKEN_PAIR: Record<string, string> = {
 
 const PRICE_CACHE_TTL_MS = 30_000;
 const KRAKEN_FETCH_TIMEOUT_MS = 3_000;
-const MAX_SLIPPAGE_BPS = 200;
 const MAX_SAFE_INTEGER_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
 const priceCache = new Map<string, { price: number; expiresAt: number }>();
 
@@ -205,13 +205,15 @@ export async function mapToRiskRouterIntent(input: {
   const amountUsdScaled = BigInt(Math.max(0, Math.round(amountUnits * priceUsd * 1_000_000)));
 
   const maxSlippageBpsFromParams = Number(input.intent.params?.max_slippage_bps ?? NaN);
-  const maxSlippageBps = Number.isFinite(maxSlippageBpsFromParams)
+  const maxSlippageBpsCandidate = Number.isFinite(maxSlippageBpsFromParams)
     ? Math.max(1, Math.floor(maxSlippageBpsFromParams))
-    : input.defaultMaxSlippageBps ?? 50;
+    : input.defaultMaxSlippageBps ?? POLICY_LIMITS.DEFAULT_SLIPPAGE_BPS;
 
-  if (maxSlippageBps > MAX_SLIPPAGE_BPS) {
-    throw new Error(`maxSlippageBps exceeds backend ceiling (${MAX_SLIPPAGE_BPS})`);
+  if (maxSlippageBpsCandidate > POLICY_LIMITS.MAX_SLIPPAGE_BPS) {
+    throw new Error(`maxSlippageBps exceeds backend ceiling (${POLICY_LIMITS.MAX_SLIPPAGE_BPS})`);
   }
+
+  const maxSlippageBps = Math.min(maxSlippageBpsCandidate, POLICY_LIMITS.MAX_SLIPPAGE_BPS);
 
   const deadline = await getChainDeadline(300);
 
