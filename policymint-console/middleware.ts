@@ -1,28 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SESSION_COOKIE_NAME } from '@/lib/auth/constants';
+import { OPERATOR_SESSION_COOKIE_NAME } from '@/lib/auth/constants';
+import { decodeOperatorJwt } from '@/lib/auth/operator-jwt';
 
 export async function middleware(request: NextRequest) {
-  const cookieHeader = request.headers.get('cookie');
+  const token = request.cookies.get(OPERATOR_SESSION_COOKIE_NAME)?.value;
+  const isValidSession = Boolean(token);
 
-  try {
-    const sessionResponse = await fetch(new URL('/api/auth/session', request.url), {
-      method: 'GET',
-      headers: cookieHeader ? { cookie: cookieHeader } : undefined,
-    });
-
-    if (sessionResponse.ok) {
-      const session = (await sessionResponse.json()) as { address?: string | null };
-      if (typeof session.address === 'string' && session.address.length > 0) {
-        return NextResponse.next();
-      }
+  if (isValidSession && token) {
+    const payload = decodeOperatorJwt(token);
+    if (payload && payload.exp > Math.floor(Date.now() / 1000)) {
+      return NextResponse.next();
     }
-  } catch {
-    // noop - treat as unauthenticated below
   }
 
   const response = NextResponse.redirect(new URL('/', request.url));
-  if (request.cookies.get(SESSION_COOKIE_NAME)?.value) {
-    response.cookies.set(SESSION_COOKIE_NAME, '', {
+  if (token) {
+    response.cookies.set(OPERATOR_SESSION_COOKIE_NAME, '', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',

@@ -1,0 +1,122 @@
+{
+  "info": {
+    "name": "PolicyMint Phase 2 Auth QA",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "renderBaseUrl", "value": "https://your-render-backend.onrender.com" },
+    { "key": "vercelBaseUrl", "value": "https://your-vercel-app.vercel.app" },
+    { "key": "inScopeAgentId", "value": "00000000-0000-0000-0000-000000000001" },
+    { "key": "outOfScopeAgentId", "value": "00000000-0000-0000-0000-000000000002" },
+    { "key": "validOperatorToken", "value": "" },
+    { "key": "expiredOperatorToken", "value": "" },
+    { "key": "invalidOperatorToken", "value": "tampered.token.value" },
+    { "key": "validAgentApiKey", "value": "pm_live_xxxxxxxx" }
+  ],
+  "item": [
+    {
+      "name": "L3 Direct Backend",
+      "item": [
+        {
+          "name": "L3-01 in-scope stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Operator-Token", "value": "{{validOperatorToken}}" }
+            ],
+            "url": "{{renderBaseUrl}}/v1/agents/{{inScopeAgentId}}/stats"
+          }
+        },
+        {
+          "name": "L3-02 out-of-scope stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Operator-Token", "value": "{{validOperatorToken}}" }
+            ],
+            "url": "{{renderBaseUrl}}/v1/agents/{{outOfScopeAgentId}}/stats"
+          }
+        },
+        {
+          "name": "L3-03 missing token",
+          "request": {
+            "method": "GET",
+            "url": "{{renderBaseUrl}}/v1/agents/{{inScopeAgentId}}/stats"
+          }
+        },
+        {
+          "name": "L3-04 expired token",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Operator-Token", "value": "{{expiredOperatorToken}}" }
+            ],
+            "url": "{{renderBaseUrl}}/v1/agents/{{inScopeAgentId}}/stats"
+          }
+        },
+        {
+          "name": "L3-05 invalid token",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Operator-Token", "value": "{{invalidOperatorToken}}" }
+            ],
+            "url": "{{renderBaseUrl}}/v1/agents/{{inScopeAgentId}}/stats"
+          }
+        }
+      ]
+    },
+    {
+      "name": "L1+L2 Via Proxy",
+      "item": [
+        {
+          "name": "L1 nonce",
+          "request": {
+            "method": "GET",
+            "url": "{{vercelBaseUrl}}/api/proxy/auth/nonce"
+          }
+        },
+        {
+          "name": "L1 verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"<siwe_message>\",\n  \"signature\": \"<siwe_signature>\"\n}"
+            },
+            "url": "{{vercelBaseUrl}}/api/proxy/auth/verify"
+          }
+        },
+        {
+          "name": "L2 session",
+          "request": {
+            "method": "GET",
+            "url": "{{vercelBaseUrl}}/api/proxy/auth/session"
+          }
+        },
+        {
+          "name": "L2 logout",
+          "request": {
+            "method": "POST",
+            "url": "{{vercelBaseUrl}}/api/proxy/auth/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "L4 Proxy Data",
+      "item": [
+        {
+          "name": "L4 stats through proxy",
+          "request": {
+            "method": "GET",
+            "url": "{{vercelBaseUrl}}/api/proxy/v1/agents/{{inScopeAgentId}}/stats"
+          }
+        }
+      ]
+    }
+  ]
+}

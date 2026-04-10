@@ -1,4 +1,4 @@
-export const API_URL = process.env.NEXT_PUBLIC_API_URL;
+export const API_URL = '/api/proxy';
 export const API_KEY = process.env.NEXT_PUBLIC_AGENT_API_KEY;
 
 type ErrorEnvelope = {
@@ -32,13 +32,10 @@ export class ConsoleApiError extends Error {
 }
 
 export function hasApiUrl(): boolean {
-  return Boolean(API_URL);
+  return true;
 }
 
 export function buildApiUrl(path: string): string {
-  if (!API_URL) {
-    throw new Error('NEXT_PUBLIC_API_URL is not configured');
-  }
   return `${API_URL}${path}`;
 }
 
