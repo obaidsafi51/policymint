@@ -11,6 +11,7 @@ import { policyRoutes } from './modules/policies/policy.routes.js';
 import { evaluateRoutes } from './modules/policy-engine/evaluate.route.js';
 import { evaluationTxHashRoutes } from './modules/policy-engine/evaluation-tx-hash.route.js';
 import { apiKeyAuth } from './plugins/auth.js';
+import { consoleRoutes } from './modules/console/console.routes.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -71,6 +72,7 @@ export async function buildApp() {
   await app.register(async (protectedApp) => {
     protectedApp.addHook('preHandler', apiKeyAuth);
     await protectedApp.register(agentProtectedRoutes, { prefix: '/v1/agents' });
+    await protectedApp.register(consoleRoutes, { prefix: '/v1/agents' });
     await protectedApp.register(policyRoutes, { prefix: '/v1/policies' });
   });
 
