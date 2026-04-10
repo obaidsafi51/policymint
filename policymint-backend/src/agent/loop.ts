@@ -1,108 +1,53 @@
-import { PolicyType } from '@prisma/client';
+import { env } from '../config/env.js';
+import { logger as sharedLogger } from '../lib/logger.js';
+import { prisma } from '../db/client.js';
 import { evaluateIntent } from '../modules/policy-engine/evaluate.service.js';
 import type { EvaluateIntentInput } from '../modules/policy-engine/evaluate.schema.js';
-import { env } from '../config/env.js';
-import { prisma } from '../db/client.js';
-import { logger as sharedLogger } from '../lib/logger.js';
-import { captureError } from '../lib/sentry.js';
-import { computeAmountUsdScaled } from './position-sizing.js';
-import { PRISMSignalProvider } from './prism-signal-provider.js';
-import { PRISMAPIError, type SignalProvider } from './signal-provider.js';
-import { KrakenAdapter } from '../exchange/kraken.js';
-import { KrakenWebSocket } from '../strategy/kraken-ws.js';
-import { MomentumStrategy } from '../strategy/momentum.strategy.js';
-import type { IStrategy } from '../strategy/strategy.interface.js';
-
-const DEFAULT_TARGET_ASSET = 'BTC';
-const DEFAULT_SPEND_CAP_PER_TX_USD = 450;
-const MIN_CONFIDENCE = 0.6;
-const MIN_BTC_VOLUME = 0.0001;
+import { PRISMAPIError, PRISMSignalProvider } from '../strategy/prism-signal-provider.js';
+import type { SignalProvider } from '../strategy/signal-provider.interface.js';
+import { computePositionSizing } from '../strategy/position-sizing.js';
+import { captureErrorToSentry } from '../lib/telemetry.js';
 
 type EvaluateIntentResponse = Awaited<ReturnType<typeof evaluateIntent>>;
 type EvaluateIntentFn = (intent: EvaluateIntentInput) => Promise<EvaluateIntentResponse>;
 
-interface PriceFeed {
-  connect(): Promise<void>;
-  disconnect(): void;
-}
-
 interface StrategyLoopOptions {
   signalProvider?: SignalProvider;
-  logger?: typeof sharedLogger;
-  strategy?: IStrategy;
-  krakenAdapter?: KrakenAdapter;
   evaluateIntentFn?: EvaluateIntentFn;
-  createPriceFeed?: (onPrice: (price: number) => void) => PriceFeed;
+  logger?: typeof sharedLogger;
+  targetAsset?: string;
 }
 
-interface EvaluateApiResponse {
-  result: 'allow' | 'block';
-  reason: string | null;
-  policy_id: string | null;
-  evaluation_id: string;
-  eip712_signed_intent: string;
+const PRISM_PAUSE_BASE_MS = 15_000;
+const PRISM_PAUSE_MAX_MS = 5 * 60_000;
+
+function getPrismPauseDurationMs(consecutiveFailures: number): number {
+  const exponent = Math.max(0, consecutiveFailures - 4);
+  return Math.min(PRISM_PAUSE_MAX_MS, PRISM_PAUSE_BASE_MS * 2 ** exponent);
 }
 
 export class StrategyLoop {
-  private readonly provider: SignalProvider;
+  private readonly signalProvider: SignalProvider;
+  private readonly evaluateIntentFn: EvaluateIntentFn;
   private readonly logger: typeof sharedLogger;
+  private readonly targetAsset: string;
 
-  private readonly legacyMode: boolean;
-  private readonly legacyStrategy: IStrategy;
-  private readonly legacyKrakenAdapter: KrakenAdapter;
-  private readonly legacyEvaluateIntentFn: EvaluateIntentFn;
-  private readonly legacyPriceFeed: PriceFeed;
-
-  private timer: NodeJS.Timeout | null = null;
+  private intervalHandle: NodeJS.Timeout | null = null;
   private started = false;
-  private isProcessing = false;
-  private prismFailureStreak = 0;
-  private pausedForPrism = false;
+  private isTickRunning = false;
+  private consecutivePrismFailures = 0;
+  private prismPaused = false;
+  private prismPauseUntilMs = 0;
 
   constructor(options: StrategyLoopOptions = {}) {
-    this.provider = options.signalProvider ?? new PRISMSignalProvider();
+    this.signalProvider = options.signalProvider ?? new PRISMSignalProvider();
+    this.evaluateIntentFn = options.evaluateIntentFn ?? evaluateIntent;
     this.logger = options.logger ?? sharedLogger;
-
-    this.legacyMode = Boolean(
-      options.strategy || options.krakenAdapter || options.evaluateIntentFn || options.createPriceFeed,
-    );
-    this.legacyStrategy = options.strategy ?? new MomentumStrategy();
-    this.legacyKrakenAdapter = options.krakenAdapter ?? new KrakenAdapter();
-    this.legacyEvaluateIntentFn = options.evaluateIntentFn ?? evaluateIntent;
-    this.legacyPriceFeed = options.createPriceFeed
-      ? options.createPriceFeed((price) => this.onPrice(price))
-      : new KrakenWebSocket((price) => this.onPrice(price));
+    this.targetAsset = (options.targetAsset ?? 'BTC').toUpperCase();
   }
 
   async start(): Promise<void> {
-    if (this.started) {
-      return;
-    }
-
-    if (this.legacyMode) {
-      if (!env.AGENT_ID) {
-        this.logger.warn({ event: 'STRATEGY_LOOP_DISABLED' }, 'AGENT_ID not set; strategy loop disabled');
-        return;
-      }
-
-      this.started = true;
-      const initResult = await this.legacyKrakenAdapter.paperInit();
-      if (!initResult.success) {
-        this.logger.warn(
-          {
-            event: 'PAPER_INIT_FAILED',
-            stderr: initResult.stderr,
-            exitCode: initResult.exitCode,
-            timedOut: initResult.timedOut,
-          },
-          'Kraken paper account initialization failed; continuing',
-        );
-      }
-
-      await this.legacyPriceFeed.connect();
-      this.logger.info({ event: 'STRATEGY_LOOP_STARTED' }, 'Legacy strategy loop started');
-      return;
-    }
+    if (this.started) return;
 
     if (!env.AGENT_ID) {
       this.logger.warn({ event: 'STRATEGY_LOOP_DISABLED' }, 'AGENT_ID not set; strategy loop disabled');
@@ -118,73 +63,99 @@ export class StrategyLoop {
     }
 
     this.started = true;
-    this.timer = setInterval(() => {
+    this.intervalHandle = setInterval(() => {
       void this.tick();
     }, env.STRATEGY_TICK_INTERVAL_MS);
 
+    void this.tick();
     this.logger.info(
-      { event: 'STRATEGY_LOOP_STARTED', intervalMs: env.STRATEGY_TICK_INTERVAL_MS },
-      'PRISM strategy loop started',
+      { event: 'STRATEGY_LOOP_STARTED', tick_interval_ms: env.STRATEGY_TICK_INTERVAL_MS },
+      'PRISM strategy interval loop started',
     );
-
-    await this.tick();
   }
 
   async stop(): Promise<void> {
-    if (!this.started) {
-      return;
-    }
+    if (!this.started) return;
 
     this.started = false;
-
-    if (this.legacyMode) {
-      this.legacyPriceFeed.disconnect();
-      this.legacyKrakenAdapter.cleanup();
-      this.legacyStrategy.reset();
-      this.logger.info({ event: 'STRATEGY_LOOP_STOPPED' }, 'Legacy strategy loop stopped');
-      return;
-    }
-
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
+    if (this.intervalHandle) {
+      clearInterval(this.intervalHandle);
+      this.intervalHandle = null;
     }
 
     this.logger.info({ event: 'STRATEGY_LOOP_STOPPED' }, 'Strategy loop stopped');
   }
 
-  public async processSignal(price: number): Promise<void> {
-    if (!this.legacyMode || !this.started) {
-      return;
-    }
-
+  public async tick(): Promise<void> {
     try {
-      const signal = this.legacyStrategy.onPrice(price);
+      if (!this.started || this.isTickRunning) return;
+      this.isTickRunning = true;
 
-      if (signal.action === 'hold') {
-        return;
-      }
+      if (!env.AGENT_ID) return;
 
-      const btcVolume = this.floorToSixDecimals(signal.amountUsd / price);
-      if (btcVolume < MIN_BTC_VOLUME) {
-        this.logger.info(
-          {
-            event: 'BELOW_MINIMUM_VOLUME',
-            pair: signal.pair,
-            amountUsd: signal.amountUsd,
-            price,
-            btcVolume,
-          },
-          'Skipping trade below Kraken BTC minimum volume',
+      const agent = await prisma.agent.findUnique({
+        where: { id: env.AGENT_ID },
+        select: { id: true, isActive: true, erc8004TokenId: true },
+      });
+
+      if (!agent?.isActive || !agent.erc8004TokenId) {
+        this.logger.warn(
+          { event: 'STRATEGY_AGENT_INACTIVE_OR_UNREGISTERED', agent_id: env.AGENT_ID },
+          'Skipping tick: agent inactive or not registered on-chain',
         );
         return;
       }
 
-      const evaluation = await this.legacyEvaluateIntentFn(
-        this.toLegacyTradeIntent({
-          signalAction: signal.action,
-          signalReason: signal.reason,
-          btcVolume,
+      if (this.prismPaused) {
+        if (Date.now() < this.prismPauseUntilMs) {
+          this.logger.warn({ event: 'PRISM_PAUSED_SKIP', resume_at_ms: this.prismPauseUntilMs }, 'Skipping PRISM requests while outage backoff is active');
+          return;
+        }
+
+        this.logger.info({ event: 'PRISM_PAUSE_PROBE' }, 'PRISM backoff elapsed; probing for recovery');
+      }
+
+      const canonicalSymbol = await this.signalProvider.resolveSymbol(this.targetAsset);
+
+      if (this.prismPaused) {
+        // Probe recovery on each tick while paused
+        await this.signalProvider.getSignal(canonicalSymbol);
+        this.prismPaused = false;
+        this.consecutivePrismFailures = 0;
+        this.prismPauseUntilMs = 0;
+        this.logger.info({ event: 'PRISM_RESUMED', symbol: canonicalSymbol }, 'PRISM recovered; strategy loop resumed');
+        return;
+      }
+
+      const signal = await this.signalProvider.getSignal(canonicalSymbol);
+      this.consecutivePrismFailures = 0;
+
+      if (signal.direction === 'neutral') {
+        this.logger.info({ event: 'PRISM_NEUTRAL', symbol: canonicalSymbol }, 'PRISM signal neutral, skipping tick');
+        return;
+      }
+
+      if (signal.confidence < 0.6) {
+        this.logger.info(
+          { event: 'PRISM_LOW_CONFIDENCE', symbol: canonicalSymbol, confidence: signal.confidence },
+          'PRISM signal low confidence, skipping tick',
+        );
+        return;
+      }
+
+      const risk = await this.signalProvider.getRisk(canonicalSymbol);
+      const position = computePositionSizing({
+        spendCapPerTxUsd: env.STRATEGY_TRADE_AMOUNT_USD,
+        drawdownRiskScore: risk.drawdownRiskScore,
+        confidence: signal.confidence,
+      });
+
+      const evaluation = await this.evaluateIntentFn(
+        this.toTradeIntent({
+          signalAction: signal.direction,
+          signalReason: `prism_confidence=${signal.confidence}`,
+          pair: canonicalSymbol,
+          amountUsdScaled: position.amountUsdScaled,
         }),
       );
 
@@ -200,222 +171,81 @@ export class StrategyLoop {
         return;
       }
 
-      const cliPair = signal.pair.replace('/', '');
-      if (signal.action === 'buy') {
-        await this.legacyKrakenAdapter.paperBuy(cliPair, btcVolume);
-      } else {
-        await this.legacyKrakenAdapter.paperSell(cliPair, btcVolume);
-      }
-    } catch (error) {
-      this.logger.error({ err: error }, 'Legacy strategy loop processing error');
-    }
-  }
-
-  public onPrice(price: number): void {
-    if (this.legacyMode) {
-      if (this.isProcessing) {
-        return;
-      }
-
-      this.isProcessing = true;
-      void this.processSignal(price).finally(() => {
-        this.isProcessing = false;
-      });
-      return;
-    }
-
-    void this.tick();
-  }
-
-  private async tick(): Promise<void> {
-    if (!this.started || this.isProcessing) {
-      return;
-    }
-
-    this.isProcessing = true;
-
-    try {
-      const agentId = env.AGENT_ID;
-      if (!agentId) {
-        return;
-      }
-
-      const agent = await prisma.agent.findUnique({
-        where: { id: agentId },
-        select: {
-          id: true,
-          isActive: true,
-          erc8004TokenId: true,
-        },
-      });
-
-      if (!agent?.isActive || !agent.erc8004TokenId) {
-        this.logger.info(
-          { event: 'STRATEGY_SKIP_INACTIVE_OR_UNREGISTERED', agentId },
-          'Agent inactive or missing erc8004 token id; skipping tick',
-        );
-        return;
-      }
-
-      const targetAsset = DEFAULT_TARGET_ASSET;
-      const canonicalSymbol = await this.provider.resolveSymbol(targetAsset);
-
-      if (this.pausedForPrism) {
-        await this.provider.getSignal(canonicalSymbol);
-        this.prismFailureStreak = 0;
-        this.pausedForPrism = false;
-        this.logger.info({ event: 'PRISM_LOOP_RESUMED' }, 'PRISM recovered; strategy loop resumed');
-        return;
-      }
-
-      const signal = await this.provider.getSignal(canonicalSymbol);
-      this.prismFailureStreak = 0;
-
-      if (signal.direction === 'neutral') {
-        this.logger.info({ event: 'PRISM_SIGNAL_NEUTRAL', symbol: canonicalSymbol }, 'PRISM signal neutral, skipping tick');
-        return;
-      }
-
-      if (signal.confidence < MIN_CONFIDENCE) {
-        this.logger.info(
-          { event: 'PRISM_SIGNAL_LOW_CONFIDENCE', confidence: signal.confidence, symbol: canonicalSymbol },
-          `PRISM signal low confidence (${signal.confidence.toFixed(3)}), skipping tick`,
-        );
-        return;
-      }
-
-      const risk = await this.provider.getRisk(canonicalSymbol);
-      const spendCapPerTxUsd = await this.resolveSpendCapUsd(agent.id);
-      const amountUsdScaled = computeAmountUsdScaled({
-        spendCapPerTxUsd,
-        drawdownRiskScore: risk.drawdownRiskScore,
-        confidence: signal.confidence,
-      });
-
-      const evaluation = await this.submitForEvaluation({
-        agentId: agent.id,
-        direction: signal.direction,
-        symbol: canonicalSymbol,
-        amountUsdScaled,
-      });
-
-      if (evaluation.result === 'block') {
-        this.logger.info(
-          { event: 'STRATEGY_TICK_BLOCKED', evaluation_id: evaluation.evaluation_id, reason: evaluation.reason },
-          'Strategy tick blocked by policy',
-        );
-        return;
-      }
-
       this.logger.info(
-        { event: 'STRATEGY_TICK_ALLOWED', evaluation_id: evaluation.evaluation_id },
-        'Strategy tick submitted and allowed',
+        {
+          event: 'EVALUATION_ALLOWED',
+          pair: canonicalSymbol,
+          amount_usd_scaled: position.amountUsdScaled.toString(),
+          evaluation_id: evaluation.evaluation_id,
+        },
+        'Evaluation returned allow; execution continues in policy pipeline',
       );
     } catch (error) {
       if (error instanceof PRISMAPIError) {
-        this.prismFailureStreak += 1;
-        captureError(error, { function: 'StrategyLoop.tick', streak: this.prismFailureStreak });
+        this.consecutivePrismFailures += 1;
 
-        if (this.prismFailureStreak >= 3) {
-          this.pausedForPrism = true;
-          this.logger.error(
-            { event: 'PRISM_CRITICAL_OUTAGE', streak: this.prismFailureStreak },
-            'PRISM API failure streak exceeded threshold; pausing strategy loop until recovery',
-          );
+        this.logger.error(
+          {
+            event: 'PRISM_API_ERROR',
+            failures: this.consecutivePrismFailures,
+            endpoint: error.endpoint,
+            status: error.statusCode,
+            message: error.message,
+          },
+          'PRISM API error during strategy tick',
+        );
+
+        if (this.consecutivePrismFailures > 3) {
+          this.prismPaused = true;
+          this.prismPauseUntilMs = Date.now() + getPrismPauseDurationMs(this.consecutivePrismFailures);
+          this.logger.error({
+            event: 'PRISM_PAUSED',
+            failures: this.consecutivePrismFailures,
+            resume_at_ms: this.prismPauseUntilMs,
+          }, 'PRISM outage threshold reached; loop paused until successful signal fetch');
+          await captureErrorToSentry({
+            error,
+            tags: { stage: 'prism_outage_pause' },
+            context: {
+              failures: this.consecutivePrismFailures,
+              endpoint: error.endpoint,
+              resume_at_ms: this.prismPauseUntilMs,
+            },
+          });
         }
 
         return;
       }
 
-      captureError(error, { function: 'StrategyLoop.tick' });
-      this.logger.error({ err: error }, 'Strategy loop tick failed');
+      this.logger.error({ err: error }, 'Strategy loop processing error');
+      await captureErrorToSentry({
+        error,
+        tags: { stage: 'strategy_loop' },
+      });
     } finally {
-      this.isProcessing = false;
+      this.isTickRunning = false;
     }
   }
 
-  private async submitForEvaluation(input: {
-    agentId: string;
-    direction: 'buy' | 'sell';
-    symbol: string;
-    amountUsdScaled: bigint;
-  }): Promise<EvaluateApiResponse> {
-    const response = await fetch(`http://127.0.0.1:${env.PORT}/v1/evaluate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-internal-key': env.INTERNAL_SERVICE_KEY as string,
-      },
-      body: JSON.stringify({
-        agent_id: input.agentId,
-        action_type: 'trade',
-        venue: 'kraken-spot',
-        amount: input.amountUsdScaled.toString(),
-        token_in: 'USD',
-        token_out: 'USD',
-        eip712_domain: {
-          name: 'PolicyMint',
-          version: '1',
-          chainId: env.CHAIN_ID,
-          verifyingContract: env.RISK_ROUTER_ADDRESS,
-        },
-        params: {
-          pair: input.symbol,
-          side: input.direction,
-          amount_usd_scaled: input.amountUsdScaled.toString(),
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Evaluate API failed with status ${response.status}`);
-    }
-
-    return (await response.json()) as EvaluateApiResponse;
+  public async onPrice(_price: number): Promise<void> {
+    await this.tick();
   }
 
-  private async resolveSpendCapUsd(agentId: string): Promise<number> {
-    const spendPolicy = await prisma.policy.findFirst({
-      where: {
-        agentId,
-        type: PolicyType.SPEND_CAP_PER_TX,
-        isActive: true,
-        deletedAt: null,
-      },
-      select: { params: true },
-    });
-
-    const maxAmountUsd = Number((spendPolicy?.params as Record<string, unknown> | null)?.max_amount_usd ?? Number.NaN);
-    if (!Number.isFinite(maxAmountUsd) || maxAmountUsd <= 0) {
-      return DEFAULT_SPEND_CAP_PER_TX_USD;
-    }
-
-    return Math.min(maxAmountUsd, DEFAULT_SPEND_CAP_PER_TX_USD);
-  }
-
-  private floorToSixDecimals(value: number): number {
-    return Math.floor(value * 1_000_000) / 1_000_000;
-  }
-
-  private toLegacyTradeIntent(input: {
+  private toTradeIntent(input: {
     signalAction: 'buy' | 'sell';
     signalReason: string;
-    btcVolume: number;
+    pair: string;
+    amountUsdScaled: bigint;
   }): EvaluateIntentInput {
     const agentId = env.AGENT_ID;
-    if (!agentId) {
-      throw new Error('AGENT_ID is not configured');
-    }
-
-    const btcMicro = Math.round(input.btcVolume * 1_000_000);
-    const amountWei = (BigInt(btcMicro) * 1_000_000_000_000n).toString();
+    if (!agentId) throw new Error('AGENT_ID is not configured');
 
     return {
       agent_id: agentId,
       action_type: 'trade',
       venue: 'kraken-spot',
-      amount: amountWei,
-      token_in: 'BTC',
+      amount: input.amountUsdScaled.toString(),
+      token_in: 'USDC',
       token_out: 'USD',
       eip712_domain: {
         name: 'PolicyMint',
@@ -424,9 +254,8 @@ export class StrategyLoop {
         verifyingContract: env.RISK_ROUTER_ADDRESS,
       },
       params: {
-        pair: 'BTC/USD',
+        pair: input.pair,
         side: input.signalAction,
-        btc_volume: input.btcVolume,
         signal_reason: input.signalReason,
       },
     };

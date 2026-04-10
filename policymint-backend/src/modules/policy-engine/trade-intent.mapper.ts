@@ -1,6 +1,6 @@
 import { env } from '../../config/env.js';
-import type { EvaluateIntentInput } from './evaluate.schema.js';
 import { publicClient } from '../../lib/blockchain/client.js';
+import type { EvaluateIntentInput } from './evaluate.schema.js';
 
 export interface RiskRouterTradeIntent {
   agentId: bigint;
@@ -51,16 +51,16 @@ function normalizeSymbol(symbol: string): string {
 
 function mapAction(intent: EvaluateIntentInput): string {
   if (intent.action_type !== 'trade') {
-    throw new Error(`RiskRouter only supports action_type "trade". Received: ${intent.action_type}`);
+    throw new Error(`Unsupported action_type for RiskRouter: ${intent.action_type}`);
   }
 
   const side = typeof intent.params?.side === 'string' ? intent.params.side.toLowerCase() : null;
 
   if (side === 'buy' || side === 'sell') {
-    return side;
+    return side.toUpperCase();
   }
 
-  return 'buy';
+  throw new Error('RiskRouter trade intents require params.side as buy or sell');
 }
 
 function toUnitAmount(amountRaw: string, decimals: number): number {
@@ -83,16 +83,12 @@ function toUnitAmount(amountRaw: string, decimals: number): number {
 }
 
 async function getKrakenUsdPrice(tokenSymbol: string): Promise<number> {
-  if (env.NODE_ENV === 'test') {
-    return 1;
-  }
+  if (env.NODE_ENV === 'test') return 1;
 
   const normalized = normalizeSymbol(tokenSymbol);
   const now = Date.now();
   const cached = priceCache.get(normalized);
-  if (cached && cached.expiresAt > now) {
-    return cached.price;
-  }
+  if (cached && cached.expiresAt > now) return cached.price;
 
   const pair = TOKEN_TO_KRAKEN_PAIR[normalized] ?? `${normalized}USD`;
   const url = `https://api.kraken.com/0/public/Ticker?pair=${encodeURIComponent(pair)}`;
@@ -106,7 +102,6 @@ async function getKrakenUsdPrice(tokenSymbol: string): Promise<number> {
     if (error instanceof Error && error.name === 'AbortError') {
       throw new Error(`Kraken ticker request timed out after ${KRAKEN_FETCH_TIMEOUT_MS}ms`);
     }
-
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -137,18 +132,12 @@ async function getKrakenUsdPrice(tokenSymbol: string): Promise<number> {
     throw new Error(`Invalid Kraken price for ${pair}: ${lastTraded}`);
   }
 
-  priceCache.set(normalized, {
-    price,
-    expiresAt: now + PRICE_CACHE_TTL_MS,
-  });
-
+  priceCache.set(normalized, { price, expiresAt: now + PRICE_CACHE_TTL_MS });
   return price;
 }
 
 async function getPrismUsdPrice(tokenSymbol: string): Promise<number | null> {
-  if (env.NODE_ENV === 'test') {
-    return 1;
-  }
+  if (env.NODE_ENV === 'test') return 1;
 
   const normalized = normalizeSymbol(tokenSymbol);
   const url = `${env.PRISM_BASE_URL.replace(/\/$/, '')}/crypto/${encodeURIComponent(normalized)}/price`;
@@ -158,24 +147,16 @@ async function getPrismUsdPrice(tokenSymbol: string): Promise<number | null> {
   try {
     const response = await fetch(url, {
       signal: controller.signal,
-      headers: {
-        Authorization: `Bearer ${env.PRISM_API_KEY}`,
-      },
+      headers: { Authorization: `Bearer ${env.PRISM_API_KEY}` },
     });
 
-    if (!response.ok) {
-      return null;
-    }
+    if (!response.ok) return null;
 
     const payload = (await response.json()) as Record<string, unknown>;
-    const candidate =
-      payload.priceUsd ?? payload.price_usd ?? payload.price ?? payload.usd ?? payload.value;
+    const candidate = payload.priceUsd ?? payload.price_usd ?? payload.price ?? payload.usd ?? payload.value;
     const parsed = Number(candidate);
 
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return null;
-    }
-
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
     return parsed;
   } catch {
     return null;
@@ -185,14 +166,10 @@ async function getPrismUsdPrice(tokenSymbol: string): Promise<number | null> {
 }
 
 async function resolveUsdPrice(tokenSymbol: string): Promise<number> {
-  if (normalizeSymbol(tokenSymbol) === 'USD') {
-    return 1;
-  }
+  if (normalizeSymbol(tokenSymbol) === 'USD') return 1;
 
   const prismPrice = await getPrismUsdPrice(tokenSymbol);
-  if (prismPrice !== null) {
-    return prismPrice;
-  }
+  if (prismPrice !== null) return prismPrice;
 
   return getKrakenUsdPrice(tokenSymbol);
 }
@@ -203,6 +180,15 @@ function resolvePair(tokenIn: string, tokenOut?: string): string {
   return `${base}/${quote}`;
 }
 
+async function getChainDeadline(secondsFromNow: number): Promise<bigint> {
+  if (env.NODE_ENV === 'test') {
+    return BigInt(Math.floor(Date.now() / 1_000) + secondsFromNow);
+  }
+
+  const latestBlock = await publicClient.getBlock({ blockTag: 'latest' });
+  return latestBlock.timestamp + BigInt(secondsFromNow);
+}
+
 export async function mapToRiskRouterIntent(input: {
   intent: EvaluateIntentInput;
   erc8004TokenId: string;
@@ -210,12 +196,14 @@ export async function mapToRiskRouterIntent(input: {
   nonce: bigint;
   defaultMaxSlippageBps?: number;
 }): Promise<RiskRouterTradeIntent> {
+  const pairFromParams = typeof input.intent.params?.pair === 'string' ? input.intent.params.pair.trim() : '';
   const tokenIn = normalizeSymbol(input.intent.token_in);
   const tokenOut = normalizeSymbol(input.intent.token_out ?? 'USD');
   const decimals = TOKEN_DECIMALS[tokenIn] ?? 18;
   const priceUsd = await resolveUsdPrice(tokenIn);
   const amountUnits = toUnitAmount(input.intent.amount, decimals);
   const amountUsdScaled = BigInt(Math.max(0, Math.round(amountUnits * priceUsd * 1_000_000)));
+
   const maxSlippageBpsFromParams = Number(input.intent.params?.max_slippage_bps ?? NaN);
   const maxSlippageBps = Number.isFinite(maxSlippageBpsFromParams)
     ? Math.max(1, Math.floor(maxSlippageBpsFromParams))
@@ -225,15 +213,12 @@ export async function mapToRiskRouterIntent(input: {
     throw new Error(`maxSlippageBps exceeds backend ceiling (${MAX_SLIPPAGE_BPS})`);
   }
 
-  const deadline =
-    env.NODE_ENV === 'test'
-      ? BigInt(Math.floor(Date.now() / 1_000) + 300)
-      : (await publicClient.getBlock({ blockTag: 'latest' })).timestamp + BigInt(300);
+  const deadline = await getChainDeadline(300);
 
   return {
     agentId: BigInt(input.erc8004TokenId),
     agentWallet: input.agentWalletAddress,
-    pair: resolvePair(tokenIn, tokenOut),
+    pair: pairFromParams.includes('/') ? pairFromParams.toUpperCase() : resolvePair(tokenIn, tokenOut),
     action: mapAction(input.intent),
     amountUsdScaled,
     maxSlippageBps: BigInt(maxSlippageBps),

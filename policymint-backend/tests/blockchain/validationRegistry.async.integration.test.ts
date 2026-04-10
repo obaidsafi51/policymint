@@ -74,7 +74,7 @@ describeDb('evaluate async emission timing', () => {
         chainId: 11155111,
         verifyingContract: '0x0000000000000000000000000000000000000000',
       },
-      params: {},
+      params: { side: 'buy' },
     };
 
     const start = Date.now();

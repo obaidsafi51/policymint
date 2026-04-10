@@ -6,6 +6,12 @@ const prismaDisconnectMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefine
 const strategyStartMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const strategyStopMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const envState = vi.hoisted(() => ({ PORT: 4010, AGENT_ID: undefined as string | undefined }));
+const agentFindUniqueMock = vi.hoisted(() => vi.fn());
+const agentUpdateMock = vi.hoisted(() => vi.fn());
+const registerAgentOnChainMock = vi.hoisted(() => vi.fn());
+const claimHackathonAllocationMock = vi.hoisted(() => vi.fn());
+const getRiskRouterIntentNonceMock = vi.hoisted(() => vi.fn());
+const captureErrorToSentryMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock('./app.js', () => ({
   buildApp: buildAppMock,
@@ -18,6 +24,10 @@ vi.mock('./config/startup.js', () => ({
 vi.mock('./db/client.js', () => ({
   prisma: {
     $disconnect: prismaDisconnectMock,
+    agent: {
+      findUnique: agentFindUniqueMock,
+      update: agentUpdateMock,
+    },
   },
 }));
 
@@ -30,6 +40,29 @@ vi.mock('./agent/loop.js', () => ({
     start: strategyStartMock,
     stop: strategyStopMock,
   })),
+}));
+
+vi.mock('./lib/blockchain/agentRegistry.js', () => ({
+  registerAgentOnChain: registerAgentOnChainMock,
+}));
+
+vi.mock('./lib/blockchain/hackathonVault.js', () => ({
+  claimHackathonAllocation: claimHackathonAllocationMock,
+}));
+
+vi.mock('./lib/blockchain/riskRouter.js', () => ({
+  getRiskRouterIntentNonce: getRiskRouterIntentNonceMock,
+}));
+
+vi.mock('./modules/agents/registration.constants.js', () => ({
+  buildCanonicalAgentURI: vi.fn(() => 'data:application/json;base64,eyJhY3RpdmUiOnRydWV9'),
+  CANONICAL_AGENT_CAPABILITIES: ['trading'],
+  CANONICAL_AGENT_DESCRIPTION: 'PolicyMint',
+  CANONICAL_AGENT_NAME: 'PolicyMint',
+}));
+
+vi.mock('./lib/telemetry.js', () => ({
+  captureErrorToSentry: captureErrorToSentryMock,
 }));
 
 function createAppMock() {
@@ -53,6 +86,15 @@ describe('index main bootstrap', () => {
     vi.clearAllMocks();
     envState.PORT = 4010;
     envState.AGENT_ID = undefined;
+    agentFindUniqueMock.mockResolvedValue({
+      id: 'agent-1',
+      erc8004TokenId: '42',
+      vaultClaimedAt: new Date(),
+      registrationTxHash: '0xabc',
+      lastNonce: 1n,
+    });
+    agentUpdateMock.mockResolvedValue(undefined);
+    getRiskRouterIntentNonceMock.mockResolvedValue(1n);
   });
 
   afterEach(() => {

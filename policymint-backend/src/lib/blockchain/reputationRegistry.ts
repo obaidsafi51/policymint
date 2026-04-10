@@ -7,10 +7,6 @@ import { txQueue } from './txQueue.js';
 const REPUTATION_REGISTRY = env.REPUTATION_REGISTRY_ADDRESS as `0x${string}` | undefined;
 
 export const FeedbackType = {
-  TRADE_EXECUTION: 0,
-  RISK_MANAGEMENT: 1,
-  STRATEGY_QUALITY: 2,
-  GENERAL: 3,
   POSITIVE: 1,
   NEUTRAL: 2,
   NEGATIVE: 3,
@@ -41,7 +37,7 @@ export async function emitReputationSignal(params: EmitSignalParams): Promise<`0
 
   if (!Object.values(FeedbackType).includes(params.feedbackType)) {
     throw new Error(
-      `ReputationRegistry.submitFeedback() feedbackType must be one of 0,1,2,3. Received ${params.feedbackType}`,
+      `ReputationRegistry.submitFeedback() feedbackType must be one of 1,2,3. Received ${params.feedbackType}`,
     );
   }
 
@@ -60,13 +56,7 @@ export async function emitReputationSignal(params: EmitSignalParams): Promise<`0
       address: REPUTATION_REGISTRY,
       abi: REPUTATION_REGISTRY_ABI,
       functionName: 'submitFeedback',
-      args: [
-        params.agentId,
-        params.score,
-        params.outcomeRef,
-        params.comment.slice(0, 256),
-        params.feedbackType,
-      ],
+      args: [params.agentId, params.score, params.outcomeRef, params.comment.slice(0, 256), params.feedbackType],
       account: operatorAccount,
       gas: BigInt(150_000),
     }),
@@ -88,8 +78,8 @@ export async function emitReputationSignal(params: EmitSignalParams): Promise<`0
     {
       contract: 'ReputationRegistry',
       txHash,
-      blockNumber: receipt.blockNumber?.toString(),
-      gasUsed: receipt.gasUsed?.toString(),
+      blockNumber: receipt.blockNumber?.toString() ?? 'unknown',
+      gasUsed: receipt.gasUsed?.toString() ?? 'unknown',
       outcome: 'confirmed',
     },
     'submitFeedback confirmed',

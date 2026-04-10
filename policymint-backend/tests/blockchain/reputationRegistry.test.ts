@@ -44,7 +44,7 @@ describe('reputationRegistry', () => {
       score: 80,
       outcomeRef: `0x${'f'.repeat(64)}`,
       comment: 'Trade executed within policy bounds',
-      feedbackType: FeedbackType.TRADE_EXECUTION,
+      feedbackType: FeedbackType.POSITIVE,
     });
 
     expect(txHash).toBe('0xabc123');
@@ -56,7 +56,7 @@ describe('reputationRegistry', () => {
           80,
           `0x${'f'.repeat(64)}`,
           'Trade executed within policy bounds',
-          0,
+          1,
         ],
       }),
     );
@@ -87,7 +87,7 @@ describe('reputationRegistry', () => {
         score: 20,
         outcomeRef: `0x${'e'.repeat(64)}`,
         comment: 'Trade blocked: policy violation',
-        feedbackType: FeedbackType.RISK_MANAGEMENT,
+        feedbackType: FeedbackType.NEGATIVE,
       }),
     ).rejects.toThrow();
   });
@@ -101,7 +101,7 @@ describe('reputationRegistry', () => {
         score: 0,
         outcomeRef: `0x${'d'.repeat(64)}`,
         comment: 'Invalid score payload',
-        feedbackType: FeedbackType.GENERAL,
+        feedbackType: FeedbackType.NEUTRAL,
       }),
     ).rejects.toThrow('score must be between 1 and 100');
   });

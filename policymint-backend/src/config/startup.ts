@@ -1,8 +1,8 @@
+import { privateKeyToAccount } from 'viem/accounts';
 import { env } from './env.js';
-import { agentAccount, operatorAccount } from '../lib/blockchain/client.js';
 import { logger } from '../lib/logger.js';
 
-export function validateStartupConfiguration() {
+export function validateStartupConfiguration(): void {
   const missingContracts: string[] = [];
 
   if (!env.IDENTITY_REGISTRY_ADDRESS && !env.AGENT_REGISTRY_ADDRESS) {
@@ -41,15 +41,18 @@ export function validateStartupConfiguration() {
     throw new Error('Invalid STRATEGY_TICK_INTERVAL_MS: must be at least 1000ms');
   }
 
-  if (operatorAccount.address.toLowerCase() === agentAccount.address.toLowerCase()) {
-    throw new Error('Invalid wallet configuration: OPERATOR and AGENT wallet addresses must be different');
+  const operatorAddress = privateKeyToAccount(env.OPERATOR_WALLET_PRIVATE_KEY as `0x${string}`).address;
+  const agentAddress = privateKeyToAccount(env.AGENT_WALLET_PRIVATE_KEY as `0x${string}`).address;
+
+  if (operatorAddress.toLowerCase() === agentAddress.toLowerCase()) {
+    throw new Error('Invalid wallet config: operatorWallet and agentWallet must be different addresses');
   }
 
   logger.info(
     {
       startup: {
-        operatorWallet: operatorAccount.address,
-        agentWallet: agentAccount.address,
+        operatorWallet: operatorAddress,
+        agentWallet: agentAddress,
         sameWallet: false,
         strategyTickIntervalMs: env.STRATEGY_TICK_INTERVAL_MS,
         contracts: {

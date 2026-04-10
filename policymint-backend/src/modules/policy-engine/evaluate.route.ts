@@ -4,42 +4,32 @@ import { keccak256, toHex } from 'viem';
 import { prisma } from '../../db/client.js';
 import { verifyApiKey } from '../../lib/crypto.js';
 import { env } from '../../config/env.js';
-import { captureError } from '../../lib/sentry.js';
 import { EvaluateIntentSchema } from './evaluate.schema.js';
 import { evaluateIntent } from './evaluate.service.js';
-import {
-  canPostValidationOnChain,
-  postValidationRecord,
-} from '../../lib/blockchain/validationRegistry.js';
-import {
-  canEmitReputationSignalOnChain,
-  FeedbackType,
-  emitReputationSignal,
-} from '../../lib/blockchain/reputationRegistry.js';
+import { canPostValidationOnChain, postValidationRecord } from '../../lib/blockchain/validationRegistry.js';
+import { canEmitReputationSignalOnChain, FeedbackType, emitReputationSignal } from '../../lib/blockchain/reputationRegistry.js';
 import { submitTradeIntent, waitForTradeIntentConfirmation } from '../../lib/blockchain/riskRouter.js';
+import { captureErrorToSentry } from '../../lib/telemetry.js';
 
 const API_KEY_PREFIX = 'pm_live_';
 const PREFIX_LOOKUP_LENGTH = API_KEY_PREFIX.length + 8;
 const RATE_LIMIT_TIME_WINDOW = env.NODE_ENV === 'test' ? '1 minute' : '1 second';
 type FeedbackTypeValue = (typeof FeedbackType)[keyof typeof FeedbackType];
-type ExecutionState = 'submitted' | 'confirmed' | 'failed' | 'not-applicable';
-type ExecutionErrorTag = 'execution_reverted' | 'execution_timeout' | 'rpc_error' | 'signing_error';
+type ExecutionState = 'confirmed' | 'unconfirmed' | 'failed' | 'not-applicable';
+type ExecutionErrorTag = 'execution_reverted' | 'execution_timeout' | 'rpc_error' | 'signing_error' | 'nonce_persist_failed';
 const REPUTATION_MAX_RETRIES = 3;
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function classifyExecutionError(error: unknown): ExecutionErrorTag {
   const message = error instanceof Error ? error.message.toLowerCase() : '';
 
-  if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) {
-    return 'execution_timeout';
-  }
-
-  if (message.includes('sign') || message.includes('signature')) {
-    return 'signing_error';
-  }
-
-  if (message.includes('rpc') || message.includes('http') || message.includes('network')) {
-    return 'rpc_error';
-  }
+  if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) return 'execution_timeout';
+  if (message.includes('sign') || message.includes('signature')) return 'signing_error';
+  if (message.includes('rpc') || message.includes('http') || message.includes('network')) return 'rpc_error';
+  if (message.includes('nonce') || message.includes('persist')) return 'nonce_persist_failed';
 
   return 'execution_reverted';
 }
@@ -54,10 +44,7 @@ function resolveAttestationScore(input: {
   }
 
   const reason = (input.reason ?? '').toLowerCase();
-  if (reason.includes('malformed') || reason.includes('invalid')) {
-    return 20;
-  }
-
+  if (reason.includes('malformed') || reason.includes('invalid')) return 20;
   return 40;
 }
 
@@ -67,6 +54,15 @@ function resolveFeedback(input: {
   executionState: ExecutionState;
 }): { score: number; feedbackType: FeedbackTypeValue; comment: string; signalType: SignalType } | null {
   if (input.result === 'allow') {
+    if (input.executionState === 'not-applicable') {
+      return {
+        score: 60,
+        feedbackType: FeedbackType.NEUTRAL,
+        comment: 'Trade allowed within policy bounds (no on-chain execution required)',
+        signalType: SignalType.POSITIVE,
+      };
+    }
+
     if (input.executionState === 'confirmed') {
       return {
         score: 80,
@@ -76,20 +72,19 @@ function resolveFeedback(input: {
       };
     }
 
-    if (input.executionState !== 'failed') {
-      return null;
-    }
+    if (input.executionState !== 'failed') return null;
 
     return {
       score: 50,
       feedbackType: FeedbackType.NEUTRAL,
       comment: 'Trade allowed but execution failed',
-      signalType: SignalType.NEGATIVE,
+      signalType: SignalType.POSITIVE,
     };
   }
 
   const reason = input.reason ?? 'blocked by policy';
   const normalized = reason.toLowerCase();
+
   if (normalized.includes('riskrouter') || normalized.includes('hard limit')) {
     return {
       score: 10,
@@ -99,130 +94,37 @@ function resolveFeedback(input: {
     };
   }
 
-  const policyRule = reason.split(':')[0] ?? reason;
-
   return {
     score: 20,
     feedbackType: FeedbackType.NEGATIVE,
-    comment: `Trade blocked: ${policyRule} violated`,
+    comment: `Trade blocked: ${reason}`,
     signalType: SignalType.NEGATIVE,
   };
 }
 
-function toOutcomeRef(evaluationId: string): `0x${string}` {
-  return keccak256(toHex(evaluationId));
-}
-
-function wait(ms: number): Promise<void> {
-  return new Promise(resolve => {
-    setTimeout(resolve, ms);
-  });
-}
-
-async function emitReputationWithRetry(input: {
+async function logReputationAttempt(input: {
+  evaluationId: string;
   agentId: string;
-  agentTokenId: string;
-  evaluationId: string;
-  feedback: { score: number; feedbackType: FeedbackTypeValue; comment: string; signalType: SignalType };
-  app: FastifyInstance;
-}) {
-  let lastError: unknown;
-  let reputationTxHash: `0x${string}` | null = null;
-
-  const existingSubmittedLog = await prisma.reputationLog.findFirst({
-    where: {
-      agentId: input.agentId,
-      evaluationId: input.evaluationId,
-      status: 'submitted',
-      txHash: { not: null },
-    },
-    orderBy: { createdAt: 'desc' },
-    select: { txHash: true },
-  });
-
-  if (existingSubmittedLog?.txHash) {
-    reputationTxHash = existingSubmittedLog.txHash as `0x${string}`;
-  }
-
-  for (let attempt = 1; attempt <= REPUTATION_MAX_RETRIES; attempt += 1) {
-    try {
-      if (!reputationTxHash) {
-        reputationTxHash = await emitReputationSignal({
-          agentId: BigInt(input.agentTokenId),
-          score: input.feedback.score,
-          feedbackType: input.feedback.feedbackType,
-          outcomeRef: toOutcomeRef(input.evaluationId),
-          comment: input.feedback.comment,
-        });
-      }
-
-      await prisma.reputationSignal.upsert({
-        where: { cycleId: input.evaluationId },
-        update: {
-          txHash: reputationTxHash,
-          scoreSnapshot: input.feedback.score,
-          signalType: input.feedback.signalType,
-          emittedAt: new Date(),
-        },
-        create: {
-          agentId: input.agentId,
-          signalType: input.feedback.signalType,
-          cycleId: input.evaluationId,
-          txHash: reputationTxHash,
-          scoreSnapshot: input.feedback.score,
-          emittedAt: new Date(),
-        },
-      });
-
-      await prisma.reputationLog.create({
-        data: {
-          agentId: input.agentId,
-          evaluationId: input.evaluationId,
-          attempt,
-          status: 'submitted',
-          txHash: reputationTxHash,
-          errorMessage: null,
-        },
-      });
-
-      return;
-    } catch (error) {
-      lastError = error;
-      await prisma.reputationLog.create({
-        data: {
-          agentId: input.agentId,
-          evaluationId: input.evaluationId,
-          attempt,
-          status: 'failed',
-          txHash: reputationTxHash,
-          errorMessage: error instanceof Error ? error.message : 'Unknown error',
-        },
-      });
-      input.app.log.warn(
-        { err: error, evaluation_id: input.evaluationId, attempt },
-        'submitFeedback attempt failed',
-      );
-      if (attempt < REPUTATION_MAX_RETRIES) {
-        await wait(2 ** (attempt - 1) * 250);
-      }
-    }
-  }
-
-  captureError(lastError, {
-    evaluation_id: input.evaluationId,
-    function: 'ReputationRegistry.submitFeedback',
-  });
-}
-
-async function persistExecutionSubmission(input: {
-  evaluationId: string;
-  executionTxHash: `0x${string}`;
+  attempt: number;
+  status: 'attempt' | 'success' | 'failed';
+  txHash?: string;
+  errorMessage?: string;
 }) {
   await prisma.$executeRaw`
-    UPDATE "intent_evaluations"
-    SET "execution_tx_hash" = ${input.executionTxHash}, "emitted_at" = NOW()
-    WHERE "id" = ${input.evaluationId}::uuid
+    INSERT INTO reputation_log (evaluation_id, agent_id, attempt, status, tx_hash, error_message)
+    VALUES (
+      ${input.evaluationId}::uuid,
+      ${input.agentId}::uuid,
+      ${input.attempt},
+      ${input.status},
+      ${input.txHash ?? null},
+      ${input.errorMessage ?? null}
+    )
   `;
+}
+
+function toOutcomeRef(evaluationId: string): `0x${string}` {
+  return keccak256(toHex(evaluationId));
 }
 
 async function persistValidationEmission(input: {
@@ -238,30 +140,6 @@ async function persistValidationEmission(input: {
         emittedAt: new Date(),
       },
     });
-
-    const existingValidationRecord = await tx.validationRecord.findFirst({
-      where: {
-        evaluationId: input.evaluationId,
-        registryType: RegistryType.ERC8004,
-      },
-      select: { id: true },
-    });
-
-    if (existingValidationRecord) {
-      await tx.validationRecord.update({
-        where: { id: existingValidationRecord.id },
-        data: {
-          txHash: input.validation.txHash,
-          blockNumber: input.validation.blockNumber,
-          outcomeRef: toOutcomeRef(input.evaluationId),
-          strategyCheckpointHash: input.validation.checkpointHash,
-          emittedAt: new Date(),
-          confirmedAt: new Date(),
-          agentTokenId: input.agentTokenId,
-        },
-      } as never);
-      return;
-    }
 
     await tx.validationRecord.create({
       data: {
@@ -280,18 +158,11 @@ async function persistValidationEmission(input: {
 }
 
 function getBearerToken(authorizationHeader: string | string[] | undefined): string | null {
-  if (!authorizationHeader || Array.isArray(authorizationHeader)) {
-    return null;
-  }
-
-  if (!authorizationHeader.startsWith('Bearer ')) {
-    return null;
-  }
+  if (!authorizationHeader || Array.isArray(authorizationHeader)) return null;
+  if (!authorizationHeader.startsWith('Bearer ')) return null;
 
   const token = authorizationHeader.slice('Bearer '.length).trim();
-  if (!token.startsWith(API_KEY_PREFIX)) {
-    return null;
-  }
+  if (!token.startsWith(API_KEY_PREFIX)) return null;
 
   return token;
 }
@@ -299,16 +170,12 @@ function getBearerToken(authorizationHeader: string | string[] | undefined): str
 function isEvaluationServiceErrorLike(
   error: unknown,
 ): error is { name?: string; message: string; statusCode: number } {
-  if (!error || typeof error !== 'object') {
-    return false;
-  }
+  if (!error || typeof error !== 'object') return false;
 
   const candidate = error as { name?: unknown; message?: unknown; statusCode?: unknown };
-  const hasStatusCode = typeof candidate.statusCode === 'number';
-  const hasMessage = typeof candidate.message === 'string';
-  const hasName = candidate.name === 'EvaluationServiceError';
-
-  return hasMessage && hasStatusCode && hasName;
+  return candidate.name === 'EvaluationServiceError'
+    && typeof candidate.message === 'string'
+    && typeof candidate.statusCode === 'number';
 }
 
 export async function evaluateRoutes(app: FastifyInstance) {
@@ -319,24 +186,17 @@ export async function evaluateRoutes(app: FastifyInstance) {
         timeWindow: RATE_LIMIT_TIME_WINDOW,
         keyGenerator: request => {
           const auth = request.headers.authorization;
-
-          if (typeof auth === 'string' && auth.length > 0) {
-            return auth;
-          }
-
-          if (Array.isArray(auth) && typeof auth[0] === 'string' && auth[0].length > 0) {
-            return auth[0];
-          }
-
+          if (typeof auth === 'string' && auth.length > 0) return auth;
+          if (Array.isArray(auth) && typeof auth[0] === 'string' && auth[0].length > 0) return auth[0];
           return request.ip;
         },
         errorResponseBuilder: (_request, context) => ({
           statusCode: 429,
           error: 'Too Many Requests',
-          message: `Rate limit exceeded. Max ${context.max} requests per second per authorization key.`
-        })
-      }
-    }
+          message: `Rate limit exceeded. Max ${context.max} requests per second per authorization key.`,
+        }),
+      },
+    },
   }, async (request, reply) => {
     const body = EvaluateIntentSchema.safeParse(request.body);
     if (!body.success) {
@@ -345,7 +205,9 @@ export async function evaluateRoutes(app: FastifyInstance) {
 
     const internalKey = request.headers['x-internal-key'];
     const isInternalCall =
-      typeof internalKey === 'string' && Boolean(env.INTERNAL_SERVICE_KEY) && internalKey === env.INTERNAL_SERVICE_KEY;
+      typeof internalKey === 'string'
+      && Boolean(env.INTERNAL_SERVICE_KEY)
+      && internalKey === env.INTERNAL_SERVICE_KEY;
 
     const token = getBearerToken(request.headers.authorization);
     if (!isInternalCall && !token) {
@@ -354,12 +216,7 @@ export async function evaluateRoutes(app: FastifyInstance) {
 
     const authAgent = await prisma.agent.findUnique({
       where: { id: body.data.agent_id },
-      select: {
-        id: true,
-        apiKeyHash: true,
-        apiKeyPrefix: true,
-        isActive: true
-      }
+      select: { id: true, apiKeyHash: true, apiKeyPrefix: true, isActive: true },
     });
 
     if (!authAgent || !authAgent.isActive) {
@@ -369,14 +226,10 @@ export async function evaluateRoutes(app: FastifyInstance) {
     if (!isInternalCall) {
       const safeToken = token as string;
       const apiKeyPrefix = safeToken.slice(0, PREFIX_LOOKUP_LENGTH);
-      if (apiKeyPrefix !== authAgent.apiKeyPrefix) {
-        return reply.status(401).send({ error: 'Unauthorized' });
-      }
+      if (apiKeyPrefix !== authAgent.apiKeyPrefix) return reply.status(401).send({ error: 'Unauthorized' });
 
       const isValidApiKey = await verifyApiKey(safeToken, authAgent.apiKeyHash);
-      if (!isValidApiKey) {
-        return reply.status(401).send({ error: 'Unauthorized' });
-      }
+      if (!isValidApiKey) return reply.status(401).send({ error: 'Unauthorized' });
     }
 
     const start = Date.now();
@@ -386,124 +239,44 @@ export async function evaluateRoutes(app: FastifyInstance) {
       const { riskIntentForExecution, ...response } = evaluation;
       const durationMs = Date.now() - start;
 
-      app.log.info({
-        evaluation_id: response.evaluation_id,
-        agent_id: body.data.agent_id,
-        result: response.result,
-        policy_id: response.policy_id,
-        duration_ms: durationMs,
-        venue: body.data.venue,
-        action_type: body.data.action_type
-      }, 'Policy evaluation completed');
+      app.log.info(
+        {
+          evaluation_id: response.evaluation_id,
+          agent_id: body.data.agent_id,
+          result: response.result,
+          policy_id: response.policy_id,
+          duration_ms: durationMs,
+          venue: body.data.venue,
+          action_type: body.data.action_type,
+        },
+        'Policy evaluation completed',
+      );
 
       setImmediate(async () => {
         try {
           const agent = await prisma.agent.findUnique({
             where: { id: body.data.agent_id },
-            select: {
-              id: true,
-              erc8004TokenId: true,
-            },
+            select: { id: true, erc8004TokenId: true },
           });
 
-          if (!agent?.erc8004TokenId) {
-            return;
-          }
-
+          if (!agent?.erc8004TokenId) return;
           if (!canPostValidationOnChain()) {
             app.log.warn({ evaluation_id: response.evaluation_id }, 'ValidationRegistry not configured');
             return;
           }
 
           let executionState: ExecutionState = 'not-applicable';
-          let executionTxHash: `0x${string}` | null = null;
-          let executionNote = '';
 
           if (response.result === 'allow' && riskIntentForExecution) {
-            try {
-              const execution = await submitTradeIntent({
-                intent: riskIntentForExecution,
-                signature: response.eip712_signed_intent as `0x${string}`,
-              });
-
-              executionTxHash = execution.txHash;
-              await persistExecutionSubmission({
-                evaluationId: response.evaluation_id,
-                executionTxHash,
-              });
-
-              executionState = 'submitted';
-              executionNote = ' execution_submitted';
-            } catch (executionError) {
-              executionState = 'failed';
-              executionNote = ` ${classifyExecutionError(executionError)}`;
-              app.log.error({ err: executionError, evaluation_id: response.evaluation_id }, 'RiskRouter execution failed');
-              captureError(executionError, {
-                evaluation_id: response.evaluation_id,
-                function: 'RiskRouter.submitTradeIntent',
-                agent_token_id: agent.erc8004TokenId,
-              });
-            }
-          }
-
-          const validation = await postValidationRecord({
-            agentId: BigInt(agent.erc8004TokenId),
-            evaluationId: response.evaluation_id,
-            score: resolveAttestationScore({
-              result: response.result,
-              reason: response.reason,
-              executionState,
-            }),
-            notes:
-              response.result === 'allow'
-                ? `Policy evaluation allow; execution pending/unconfirmed;${executionNote}`
-                : `Policy block: ${response.reason ?? 'blocked by policy'}`,
-            checkpointData: {
-              action_type: body.data.action_type,
-              venue: body.data.venue,
-              amount: body.data.amount,
-              timestamp: Math.floor(Date.now() / 1_000),
-            },
-          });
-
-          await persistValidationEmission({
-            evaluationId: response.evaluation_id,
-            agentTokenId: agent.erc8004TokenId,
-            validation,
-          });
-
-          if (response.result === 'allow' && executionState === 'submitted' && executionTxHash) {
-            try {
-              await waitForTradeIntentConfirmation(executionTxHash);
-              executionState = 'confirmed';
-              executionNote = ' execution_confirmed';
-            } catch (confirmationError) {
-              executionState = 'failed';
-              executionNote = ` ${classifyExecutionError(confirmationError)}`;
-              app.log.error(
-                { err: confirmationError, evaluation_id: response.evaluation_id, execution_tx_hash: executionTxHash },
-                'RiskRouter execution confirmation failed',
-              );
-              captureError(confirmationError, {
-                evaluation_id: response.evaluation_id,
-                function: 'RiskRouter.waitForTradeIntentConfirmation',
-                execution_tx_hash: executionTxHash,
-                agent_token_id: agent.erc8004TokenId,
-              });
-            }
-
-            const postExecutionValidation = await postValidationRecord({
+            const pendingValidation = await postValidationRecord({
               agentId: BigInt(agent.erc8004TokenId),
               evaluationId: response.evaluation_id,
               score: resolveAttestationScore({
                 result: response.result,
                 reason: response.reason,
-                executionState,
+                executionState: 'unconfirmed',
               }),
-              notes:
-                executionState === 'confirmed'
-                  ? 'Policy evaluation allow; execution confirmed on-chain; execution_confirmed'
-                  : `Policy evaluation allow; execution failed after submission;${executionNote}`,
+              notes: 'Policy evaluation allow; execution submitted/unconfirmed',
               checkpointData: {
                 action_type: body.data.action_type,
                 venue: body.data.venue,
@@ -515,7 +288,124 @@ export async function evaluateRoutes(app: FastifyInstance) {
             await persistValidationEmission({
               evaluationId: response.evaluation_id,
               agentTokenId: agent.erc8004TokenId,
-              validation: postExecutionValidation,
+              validation: pendingValidation,
+            });
+
+            try {
+              const execution = await submitTradeIntent({
+                intent: riskIntentForExecution,
+                signature: response.eip712_signed_intent as `0x${string}`,
+              });
+
+              await prisma.intentEvaluation.update({
+                where: { id: response.evaluation_id },
+                data: {
+                  cycleId: execution.txHash,
+                },
+              });
+
+              await waitForTradeIntentConfirmation(execution.txHash);
+
+              executionState = 'confirmed';
+
+              const confirmedValidation = await postValidationRecord({
+                agentId: BigInt(agent.erc8004TokenId),
+                evaluationId: response.evaluation_id,
+                score: resolveAttestationScore({
+                  result: response.result,
+                  reason: response.reason,
+                  executionState,
+                }),
+                notes: 'Policy evaluation allow; execution confirmed on-chain',
+                checkpointData: {
+                  action_type: body.data.action_type,
+                  venue: body.data.venue,
+                  amount: body.data.amount,
+                  timestamp: Math.floor(Date.now() / 1_000),
+                },
+              });
+
+              await persistValidationEmission({
+                evaluationId: response.evaluation_id,
+                agentTokenId: agent.erc8004TokenId,
+                validation: confirmedValidation,
+              });
+            } catch (executionError) {
+              executionState = 'failed';
+              app.log.error({ err: executionError, evaluation_id: response.evaluation_id }, 'RiskRouter execution failed');
+              await captureErrorToSentry({
+                error: executionError,
+                tags: { stage: 'riskrouter_execution' },
+                context: {
+                  evaluation_id: response.evaluation_id,
+                  agent_id: body.data.agent_id,
+                  execution_error: classifyExecutionError(executionError),
+                },
+              });
+            }
+          } else if (response.result === 'allow') {
+            const validation = await postValidationRecord({
+              agentId: BigInt(agent.erc8004TokenId),
+              evaluationId: response.evaluation_id,
+              score: resolveAttestationScore({
+                result: response.result,
+                reason: response.reason,
+                executionState,
+              }),
+              notes: 'Policy evaluation allow; no on-chain RiskRouter execution for this action type',
+              checkpointData: {
+                action_type: body.data.action_type,
+                venue: body.data.venue,
+                amount: body.data.amount,
+                timestamp: Math.floor(Date.now() / 1_000),
+              },
+            });
+
+            await prisma.$transaction(async tx => {
+              await tx.intentEvaluation.update({
+                where: { id: response.evaluation_id },
+                data: {
+                  validationTxHash: validation.txHash,
+                  emittedAt: new Date(),
+                },
+              });
+
+              await tx.validationRecord.create({
+                data: {
+                  evaluationId: response.evaluation_id,
+                  registryType: RegistryType.ERC8004,
+                  txHash: validation.txHash,
+                  blockNumber: validation.blockNumber,
+                  outcomeRef: toOutcomeRef(response.evaluation_id),
+                  strategyCheckpointHash: validation.checkpointHash,
+                  emittedAt: new Date(),
+                  confirmedAt: new Date(),
+                  agentTokenId: agent.erc8004TokenId,
+                },
+              } as never);
+            });
+          } else {
+            const validation = await postValidationRecord({
+              agentId: BigInt(agent.erc8004TokenId),
+              evaluationId: response.evaluation_id,
+              score: resolveAttestationScore({
+                result: response.result,
+                reason: response.reason,
+                executionState,
+              }),
+              notes: `Policy block: ${response.reason ?? 'blocked by policy'}`,
+              checkpointData: {
+                action_type: body.data.action_type,
+                venue: body.data.venue,
+                amount: body.data.amount,
+                timestamp: Math.floor(Date.now() / 1_000),
+              },
+            });
+
+            await persistValidationEmission({
+              evaluationId: response.evaluation_id,
+              agentTokenId: agent.erc8004TokenId,
+              validation,
             });
           }
 
@@ -525,15 +415,11 @@ export async function evaluateRoutes(app: FastifyInstance) {
           }
 
           const alreadyEmittedSignal = await prisma.reputationSignal.findFirst({
-            where: {
-              cycleId: response.evaluation_id,
-            },
+            where: { cycleId: response.evaluation_id },
             select: { id: true },
           });
 
-          if (alreadyEmittedSignal) {
-            return;
-          }
+          if (alreadyEmittedSignal) return;
 
           const feedback = resolveFeedback({
             result: response.result,
@@ -541,22 +427,97 @@ export async function evaluateRoutes(app: FastifyInstance) {
             executionState,
           });
 
-          if (!feedback) {
-            return;
+          if (!feedback) return;
+
+          let reputationTxHash: `0x${string}` | null = null;
+          let reputationFailureMessage: string | null = null;
+
+          for (let attempt = 1; attempt <= REPUTATION_MAX_RETRIES; attempt += 1) {
+            try {
+              await logReputationAttempt({
+                evaluationId: response.evaluation_id,
+                agentId: body.data.agent_id,
+                attempt,
+                status: 'attempt',
+              });
+
+              reputationTxHash = await emitReputationSignal({
+                agentId: BigInt(agent.erc8004TokenId),
+                score: feedback.score,
+                feedbackType: feedback.feedbackType,
+                outcomeRef: toOutcomeRef(response.evaluation_id),
+                comment: feedback.comment,
+              });
+
+              await prisma.reputationSignal.upsert({
+                where: { cycleId: response.evaluation_id },
+                update: {
+                  txHash: reputationTxHash,
+                  scoreSnapshot: feedback.score,
+                  signalType: feedback.signalType,
+                  emittedAt: new Date(),
+                },
+                create: {
+                  agentId: body.data.agent_id,
+                  signalType: feedback.signalType,
+                  cycleId: response.evaluation_id,
+                  txHash: reputationTxHash,
+                  scoreSnapshot: feedback.score,
+                  emittedAt: new Date(),
+                },
+              });
+
+              await logReputationAttempt({
+                evaluationId: response.evaluation_id,
+                agentId: body.data.agent_id,
+                attempt,
+                status: 'success',
+                txHash: reputationTxHash,
+              });
+
+              break;
+            } catch (reputationErr) {
+              const errorMessage = reputationErr instanceof Error ? reputationErr.message : 'Unknown reputation emission error';
+              reputationFailureMessage = errorMessage;
+
+              await logReputationAttempt({
+                evaluationId: response.evaluation_id,
+                agentId: body.data.agent_id,
+                attempt,
+                status: 'failed',
+                errorMessage,
+              });
+
+              if (attempt < REPUTATION_MAX_RETRIES) {
+                await sleep(250 * 2 ** (attempt - 1));
+              }
+            }
           }
 
-          await emitReputationWithRetry({
-            agentId: body.data.agent_id,
-            agentTokenId: agent.erc8004TokenId,
-            evaluationId: response.evaluation_id,
-            feedback,
-            app,
-          });
+          if (!reputationTxHash) {
+            app.log.error(
+              { evaluation_id: response.evaluation_id, error: reputationFailureMessage },
+              'Reputation emission failed after retries',
+            );
+
+            await captureErrorToSentry({
+              error: reputationFailureMessage ?? 'Reputation emission failed after retries',
+              tags: { stage: 'reputation_emission' },
+              context: {
+                evaluation_id: response.evaluation_id,
+                agent_id: body.data.agent_id,
+              },
+            });
+          }
         } catch (err) {
           app.log.error({ err, evaluation_id: response.evaluation_id }, 'Background on-chain emission failed');
-          captureError(err, {
-            evaluation_id: response.evaluation_id,
-            function: 'evaluateRoutes.backgroundEmission',
+          await captureErrorToSentry({
+            error: err,
+            tags: { stage: 'background_emission' },
+            context: {
+              evaluation_id: response.evaluation_id,
+              agent_id: body.data.agent_id,
+            },
           });
         }
       });
@@ -564,20 +525,31 @@ export async function evaluateRoutes(app: FastifyInstance) {
       return reply.status(200).send(response);
     } catch (error: any) {
       const evaluationServiceErrorLike = isEvaluationServiceErrorLike(error);
+
       app.log.error(
-        { 
-          isEvaluationServiceError: evaluationServiceErrorLike, 
-          name: error?.name, 
-          message: error?.message, 
-          err: error 
-        }, 
-        'Caught error in evaluate route'
+        {
+          isEvaluationServiceError: evaluationServiceErrorLike,
+          name: error?.name,
+          message: error?.message,
+          err: error,
+        },
+        'Caught error in evaluate route',
       );
+
       if (evaluationServiceErrorLike) {
         return reply.status(error.statusCode || 400).send({ error: error.message, evaluation_id: null });
       }
 
       request.log.error({ err: error }, 'Policy evaluation failed unexpectedly');
+
+      await captureErrorToSentry({
+        error,
+        tags: { stage: 'evaluate_request' },
+        context: {
+          agent_id: body.data.agent_id,
+        },
+      });
+
       return reply.status(500).send({ error: 'Internal evaluation error', evaluation_id: null });
     }
   });

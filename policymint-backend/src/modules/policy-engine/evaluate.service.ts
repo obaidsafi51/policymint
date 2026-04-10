@@ -20,7 +20,7 @@ interface EvaluateIntentResponse {
 
 const MAX_ALLOWED_TRADES_PER_HOUR = 8;
 const MAX_ALLOWED_SLIPPAGE_BPS = 200;
-const RISK_ROUTER_SPEND_CAP_USD_SCALED = BigInt(450_000_000);
+const MAX_NONCE_ALLOCATION_ATTEMPTS = 5;
 
 function fallbackRiskIntent(intent: EvaluateIntentInput) {
   return {
@@ -43,26 +43,6 @@ export class EvaluationServiceError extends Error {
     super(message);
     this.name = 'EvaluationServiceError';
   }
-}
-
-function isEvaluationServiceErrorLike(
-  error: unknown,
-): error is { message: string; statusCode: number; name?: string } {
-  if (!error || typeof error !== 'object') {
-    return false;
-  }
-
-  const candidate = error as { message?: unknown; statusCode?: unknown; name?: unknown };
-  return typeof candidate.message === 'string' && typeof candidate.statusCode === 'number';
-}
-
-function getPrismaErrorCode(error: unknown): string | null {
-  if (!error || typeof error !== 'object') {
-    return null;
-  }
-
-  const code = (error as { code?: unknown }).code;
-  return typeof code === 'string' ? code.toUpperCase() : null;
 }
 
 function toActionType(actionType: EvaluateIntentInput['action_type']): ActionType {
@@ -88,17 +68,9 @@ async function getCurrentDailyAllowedTotalWei(agentId: string): Promise<string> 
   `;
 
   const total = rows[0]?.total;
-  if (!total) {
-    return '0';
-  }
-
-  if (typeof total === 'string') {
-    return total;
-  }
-
-  if (typeof total === 'object' && 'toString' in total) {
-    return total.toString();
-  }
+  if (!total) return '0';
+  if (typeof total === 'string') return total;
+  if (typeof total === 'object' && 'toString' in total) return total.toString();
 
   return '0';
 }
@@ -106,7 +78,7 @@ async function getCurrentDailyAllowedTotalWei(agentId: string): Promise<string> 
 async function getAllowedTradesLastHour(agentId: string): Promise<number> {
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1_000);
 
-  const count = await prisma.intentEvaluation.count({
+  return prisma.intentEvaluation.count({
     where: {
       agentId,
       result: EvaluationResult.ALLOW,
@@ -118,8 +90,6 @@ async function getAllowedTradesLastHour(agentId: string): Promise<number> {
       },
     },
   });
-
-  return count;
 }
 
 function evaluatePolicy(input: {
@@ -128,9 +98,6 @@ function evaluatePolicy(input: {
   policyParams: Prisma.JsonValue;
   currentDailyTotalWei: string;
 }): EvaluatorResult {
-  // INVARIANT: Invalid or missing policy params always produce a block.
-  // Fail-open on a spend cap is a financial vulnerability.
-  // If params are malformed, the policy is treated as maximally restrictive.
   if (input.policyType === 'VENUE_ALLOWLIST') {
     return evaluateVenueAllowlist(input.intent, input.policyParams);
   }
@@ -141,7 +108,7 @@ function evaluatePolicy(input: {
 
   if (input.policyType === 'DAILY_LOSS_BUDGET') {
     return evaluateDailyLossBudget(input.intent, input.policyParams, {
-      currentDailyTotalWei: input.currentDailyTotalWei
+      currentDailyTotalWei: input.currentDailyTotalWei,
     });
   }
 
@@ -150,11 +117,18 @@ function evaluatePolicy(input: {
 
 function getRequestedMaxSlippageBps(intent: EvaluateIntentInput): number | null {
   const raw = Number(intent.params?.max_slippage_bps ?? Number.NaN);
-  if (!Number.isFinite(raw)) {
-    return null;
+  if (!Number.isFinite(raw)) return null;
+  return Math.floor(raw);
+}
+
+function getTradeSide(intent: EvaluateIntentInput): 'buy' | 'sell' | null {
+  const sideRaw = typeof intent.params?.side === 'string' ? intent.params.side.trim().toLowerCase() : null;
+
+  if (sideRaw === 'buy' || sideRaw === 'sell') {
+    return sideRaw;
   }
 
-  return Math.floor(raw);
+  return null;
 }
 
 export async function evaluateIntent(intent: EvaluateIntentInput): Promise<EvaluateIntentResponse> {
@@ -164,7 +138,7 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
       id: true,
       erc8004TokenId: true,
       lastNonce: true,
-    }
+    },
   });
 
   if (!agent) {
@@ -175,17 +149,16 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
     where: {
       agentId: intent.agent_id,
       isActive: true,
-      deletedAt: null
+      deletedAt: null,
     },
     select: {
       id: true,
       type: true,
-      params: true
+      params: true,
     },
     orderBy: {
-      // TODO(post-hackathon): Replace createdAt ordering with explicit policy priority field.
-      createdAt: 'asc'
-    }
+      createdAt: 'asc',
+    },
   });
 
   let result: 'allow' | 'block' = 'allow';
@@ -214,7 +187,7 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
       intent,
       policyType: policy.type,
       policyParams: policy.params,
-      currentDailyTotalWei
+      currentDailyTotalWei,
     });
 
     if (!evaluation.passed) {
@@ -244,92 +217,68 @@ export async function evaluateIntent(intent: EvaluateIntentInput): Promise<Evalu
     validationTxHash: null,
   };
 
-  if (result === 'allow' && agent.erc8004TokenId) {
-    let success = false;
-    let retryCount = 0;
+  if (result === 'allow' && agent.erc8004TokenId && intent.action_type === 'trade') {
+    if (!getTradeSide(intent)) {
+      throw new EvaluationServiceError('Trade intents require params.side as buy or sell', 400);
+    }
 
-    while (!success && retryCount <= 6) {
-      try {
-        const txResult = await prisma.$transaction(async (tx) => {
-          const locked = await tx.$queryRaw<{ last_nonce: bigint }[]>`SELECT "last_nonce" FROM "agents" WHERE "id" = ${agent.id}::uuid FOR UPDATE`;
-          if (!locked || locked.length === 0) {
-            throw new EvaluationServiceError('Agent not found', 404);
-          }
+    let previousNonce = typeof agent.lastNonce === 'bigint' ? agent.lastNonce : BigInt(agent.lastNonce);
+    let allocationSucceeded = false;
 
-          const currentNonce = locked[0]?.last_nonce;
-          if (typeof currentNonce === 'undefined') {
-            throw new EvaluationServiceError('Agent nonce row missing', 500);
-          }
-          const newNonce = BigInt(currentNonce) + BigInt(1);
+    for (let attempt = 0; attempt < MAX_NONCE_ALLOCATION_ATTEMPTS; attempt += 1) {
+      const candidateNonce = previousNonce + 1n;
+      const candidateRiskIntent = await mapToRiskRouterIntent({
+        intent,
+        erc8004TokenId: agent.erc8004TokenId,
+        agentWalletAddress: agentAccount.address,
+        nonce: candidateNonce,
+        defaultMaxSlippageBps: 50,
+      });
 
-          const rIntent = await mapToRiskRouterIntent({
-            intent,
-            erc8004TokenId: agent.erc8004TokenId!,
-            agentWalletAddress: agentAccount.address,
-            nonce: newNonce,
-            defaultMaxSlippageBps: 50,
-          });
+      const candidateSignature = await signEvaluatedIntent({ intent: candidateRiskIntent });
 
-          if (rIntent.amountUsdScaled > RISK_ROUTER_SPEND_CAP_USD_SCALED) {
-            throw new EvaluationServiceError(
-              'Trade blocked: RiskRouter hard limit exceeded (spend cap per tx > $450)',
-              422,
-            );
-          }
-
-          const signature = await signEvaluatedIntent({ intent: rIntent });
-
-          await tx.agent.update({
-            where: { id: agent.id },
-            data: { lastNonce: newNonce }
-          });
-
-          await tx.intentEvaluation.create({
-            data: {
-              ...baseEvaluationData,
-              eip712SignedIntent: signature,
-            },
-          });
-
-          return { rIntent, signature };
-        }, {
-          isolationLevel: Prisma.TransactionIsolationLevel.Serializable
+      const committed = await prisma.$transaction(async tx => {
+        const updateResult = await tx.agent.updateMany({
+          where: {
+            id: intent.agent_id,
+            lastNonce: previousNonce,
+          },
+          data: {
+            lastNonce: candidateNonce,
+          },
         });
 
-        riskIntentForExecution = txResult.rIntent;
-        eip712SignedIntent = txResult.signature;
-        success = true;
-      } catch (err: any) {
-        if (
-          isEvaluationServiceErrorLike(err) &&
-          err.message !== 'Nonce conflict detected while persisting submitted trade intent'
-        ) {
-          throw err;
+        if (updateResult.count !== 1) {
+          return false;
         }
 
-        const errMessage = (err?.message || '').toLowerCase();
-        const errCode = getPrismaErrorCode(err);
-        const isTxError = 
-          errCode === 'P2034' ||
-          errCode === 'P2028' ||
-          errCode === '40001' ||
-          errCode === '40P01' ||
-          errMessage.includes('40001') ||
-          errMessage.includes('40p01') ||
-          errMessage.includes('could not serialize access') ||
-          errMessage.includes('deadlock');
+        await tx.intentEvaluation.create({
+          data: {
+            ...baseEvaluationData,
+            eip712SignedIntent: candidateSignature,
+          },
+        });
 
-        if (isTxError) {
-          retryCount++;
-          if (retryCount > 6) {
-            const e = new EvaluationServiceError('Nonce conflict detected while persisting submitted trade intent', 500);
-            throw e;
-          }
-          await new Promise(res => setTimeout(res, Math.random() * 100 + 20));
-        } else {
-          throw err;
-        }
+        return true;
+      });
+
+      if (committed) {
+        riskIntentForExecution = candidateRiskIntent;
+        eip712SignedIntent = candidateSignature;
+        allocationSucceeded = true;
+        break;
       }
+
+      const refreshedAgent = await prisma.agent.findUnique({
+        where: { id: intent.agent_id },
+        select: { lastNonce: true },
+      });
+
+      previousNonce = refreshedAgent?.lastNonce ?? previousNonce;
+    }
+
+    if (!allocationSucceeded) {
+      throw new EvaluationServiceError('Failed to allocate nonce for agent due to concurrent updates', 409);
     }
   } else {
     eip712SignedIntent = await signEvaluatedIntent({ intent: fallbackRiskIntent(intent) });

@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SignalProvider } from './signal-provider.js';
+import type { SignalProvider } from '../strategy/signal-provider.interface.js';
 
 const envState = vi.hoisted(() => ({
   AGENT_ID: 'agent-1' as string | undefined,
   INTERNAL_SERVICE_KEY: 'internal-key' as string | undefined,
+  STRATEGY_TRADE_AMOUNT_USD: 100,
   STRATEGY_TICK_INTERVAL_MS: 5_000,
   PORT: 3000,
   CHAIN_ID: 11155111,
@@ -11,8 +12,7 @@ const envState = vi.hoisted(() => ({
 }));
 
 const findUniqueMock = vi.hoisted(() => vi.fn());
-const findFirstPolicyMock = vi.hoisted(() => vi.fn());
-const computeAmountUsdScaledMock = vi.hoisted(() => vi.fn());
+const computePositionSizingMock = vi.hoisted(() => vi.fn());
 const captureErrorMock = vi.hoisted(() => vi.fn());
 const evaluateIntentMock = vi.hoisted(() => vi.fn());
 
@@ -20,17 +20,16 @@ vi.mock('../config/env.js', () => ({ env: envState }));
 vi.mock('../db/client.js', () => ({
   prisma: {
     agent: { findUnique: findUniqueMock },
-    policy: { findFirst: findFirstPolicyMock },
   },
 }));
 vi.mock('../modules/policy-engine/evaluate.service.js', () => ({
   evaluateIntent: evaluateIntentMock,
 }));
-vi.mock('./position-sizing.js', () => ({
-  computeAmountUsdScaled: computeAmountUsdScaledMock,
+vi.mock('../strategy/position-sizing.js', () => ({
+  computePositionSizing: computePositionSizingMock,
 }));
-vi.mock('../lib/sentry.js', () => ({
-  captureError: captureErrorMock,
+vi.mock('../lib/telemetry.js', () => ({
+  captureErrorToSentry: captureErrorMock,
 }));
 
 function createProvider(): SignalProvider & {
@@ -66,8 +65,18 @@ describe('StrategyLoop PRISM mode', () => {
     envState.AGENT_ID = 'agent-1';
     envState.INTERNAL_SERVICE_KEY = 'internal-key';
     findUniqueMock.mockResolvedValue({ id: 'agent-1', isActive: true, erc8004TokenId: '42' });
-    findFirstPolicyMock.mockResolvedValue({ params: { max_amount_usd: 300 } });
-    computeAmountUsdScaledMock.mockReturnValue(BigInt(123_000_000));
+    computePositionSizingMock.mockReturnValue({
+      usdAmount: 123,
+      amountUsdScaled: BigInt(123_000_000),
+    });
+    evaluateIntentMock.mockResolvedValue({
+      result: 'allow',
+      reason: null,
+      policy_id: null,
+      evaluation_id: 'eval-1',
+      eip712_signed_intent: '0xabc',
+      riskIntentForExecution: null,
+    });
 
     vi.spyOn(globalThis, 'setInterval').mockImplementation((() => ({}) as any) as any);
     vi.spyOn(globalThis, 'clearInterval').mockImplementation((() => undefined) as any);
@@ -123,7 +132,8 @@ describe('StrategyLoop PRISM mode', () => {
     const { StrategyLoop } = await import('./loop.js');
     const loop = new StrategyLoop({ signalProvider: provider, logger: logger as any });
 
-    await loop.start();
+    (loop as unknown as { started: boolean }).started = true;
+    await loop.tick();
 
     expect(provider.resolveSymbol).toHaveBeenCalledWith('BTC');
     expect(provider.getSignal).toHaveBeenCalledWith('BTC/USD');
@@ -138,30 +148,34 @@ describe('StrategyLoop PRISM mode', () => {
     const { StrategyLoop } = await import('./loop.js');
     const loop = new StrategyLoop({ signalProvider: provider, logger: logger as any });
 
-    await loop.start();
+    (loop as unknown as { started: boolean }).started = true;
+    await loop.tick();
 
     expect(provider.getRisk).toHaveBeenCalledWith('BTC/USD');
-    expect(computeAmountUsdScaledMock).toHaveBeenCalledWith({
-      spendCapPerTxUsd: 300,
+    expect(computePositionSizingMock).toHaveBeenCalledWith({
+      spendCapPerTxUsd: 100,
       drawdownRiskScore: 0.3,
       confidence: 0.91,
     });
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(evaluateIntentMock).toHaveBeenCalledTimes(1);
   });
 
   it('pauses after PRISM errors and resumes after recovery', async () => {
-    const { PRISMAPIError } = await import('./signal-provider.js');
+    const { PRISMAPIError } = await import('../strategy/prism-signal-provider.js');
     const provider = createProvider();
     provider.getSignal
-      .mockRejectedValueOnce(new PRISMAPIError('upstream failure', 502))
-      .mockRejectedValueOnce(new PRISMAPIError('upstream failure', 502))
-      .mockRejectedValueOnce(new PRISMAPIError('upstream failure', 502))
+      .mockRejectedValueOnce(new PRISMAPIError('upstream failure', 502, '/signals/BTC%2FUSD'))
+      .mockRejectedValueOnce(new PRISMAPIError('upstream failure', 502, '/signals/BTC%2FUSD'))
+      .mockRejectedValueOnce(new PRISMAPIError('upstream failure', 502, '/signals/BTC%2FUSD'))
+      .mockRejectedValueOnce(new PRISMAPIError('upstream failure', 502, '/signals/BTC%2FUSD'))
       .mockResolvedValueOnce({ direction: 'neutral', confidence: 0.9 });
     const logger = createLogger();
     const { StrategyLoop } = await import('./loop.js');
     const loop = new StrategyLoop({ signalProvider: provider, logger: logger as any });
 
-    await loop.start();
+    (loop as unknown as { started: boolean }).started = true;
+    await loop.onPrice(100_000);
+    await flush();
     await loop.onPrice(100_000);
     await flush();
     await loop.onPrice(100_000);
@@ -171,14 +185,15 @@ describe('StrategyLoop PRISM mode', () => {
 
     expect(captureErrorMock).toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalledWith(
-      { event: 'PRISM_CRITICAL_OUTAGE', streak: 3 },
-      'PRISM API failure streak exceeded threshold; pausing strategy loop until recovery',
+      expect.objectContaining({ event: 'PRISM_PAUSED', failures: 4 }),
+      'PRISM outage threshold reached; loop paused until successful signal fetch',
     );
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(evaluateIntentMock).not.toHaveBeenCalled();
 
+    (loop as unknown as { prismPauseUntilMs: number }).prismPauseUntilMs = Date.now() - 1;
     await loop.onPrice(100_000);
     await flush();
 
-    expect(logger.info).toHaveBeenCalledWith({ event: 'PRISM_LOOP_RESUMED' }, 'PRISM recovered; strategy loop resumed');
+    expect(logger.info).toHaveBeenCalledWith({ event: 'PRISM_RESUMED', symbol: 'BTC/USD' }, 'PRISM recovered; strategy loop resumed');
   });
 });

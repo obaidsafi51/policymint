@@ -7,21 +7,22 @@ import { generateApiKey } from '../../lib/crypto.js';
 import { generateId } from '../../lib/uuid.js';
 import { RegisterAgentSchema } from './agent.schema.js';
 import { createAgentRecord, getAgentById, registerAgent, updateAgentApiKey } from './agent.service.js';
+import {
+  buildCanonicalAgentURI,
+  CANONICAL_AGENT_CAPABILITIES,
+  CANONICAL_AGENT_DESCRIPTION,
+  CANONICAL_AGENT_NAME,
+} from './registration.constants.js';
 
 const AgentIdParamsSchema = z.object({
-  id: z.string().uuid()
+  id: z.string().uuid(),
 });
 
 const RegistrationProgressParamsSchema = z.object({
   registrationId: z.string().uuid(),
 });
 
-const AGENT_METADATA_TYPE = 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1';
 const REGISTRATION_JOB_TTL_MS = 15 * 60 * 1000;
-const POLICYMINT_NAME = 'PolicyMint';
-const POLICYMINT_DESCRIPTION =
-  'Policy-protected autonomous trading agent with provable risk controls. Enforces spend caps, venue allowlists, and daily loss budgets via EIP-712 signed validation artifacts on every trade intent.';
-const FRONTEND_SERVICE_ENDPOINT = 'https://policymint.vercel.app';
 
 type RegistrationStatus = 'pending' | 'active' | 'done' | 'failed';
 
@@ -62,29 +63,6 @@ const agentResponseSelect = {
   vaultClaimedAt: true,
   createdAt: true,
 };
-
-function toDataUriJson(data: Record<string, unknown>) {
-  const payload = Buffer.from(JSON.stringify(data), 'utf8').toString('base64');
-  return `data:application/json;base64,${payload}`;
-}
-
-function buildPolicyMintAgentUri() {
-  return toDataUriJson({
-    type: AGENT_METADATA_TYPE,
-    name: POLICYMINT_NAME,
-    description: POLICYMINT_DESCRIPTION,
-    services: [{ name: 'web', endpoint: FRONTEND_SERVICE_ENDPOINT }],
-    active: true,
-  });
-}
-
-function buildLegacyAgentDescription(strategyType: string) {
-  return `${strategyType} strategy agent managed by PolicyMint`;
-}
-
-function buildLegacyCapabilities() {
-  return ['policy-evaluation', 'risk-routing', 'eip712-signing'];
-}
 
 function createRegistrationJob(id: string): RegistrationJob {
   return {
@@ -175,12 +153,13 @@ async function processRegistrationJob(
     });
 
     if (canRegisterAgentOnChain()) {
-      const agentURI = buildPolicyMintAgentUri();
+      const frontendUrl = process.env.POLICYMINT_FRONTEND_URL ?? 'https://your-vercel-frontend-url.vercel.app';
+      const agentURI = buildCanonicalAgentURI(frontendUrl);
 
       const { agentId, txHash } = await registerAgentOnChain({
-        name: input.name,
-        description: buildLegacyAgentDescription(input.strategyType),
-        capabilities: buildLegacyCapabilities(),
+        name: CANONICAL_AGENT_NAME,
+        description: CANONICAL_AGENT_DESCRIPTION,
+        capabilities: [...CANONICAL_AGENT_CAPABILITIES],
         agentURI,
       });
 
@@ -270,9 +249,7 @@ async function processRegistrationJob(
       stepNumber: 4,
       stepLabel: 'Storing on-chain agent ID',
       status: 'done',
-      message: onChainAgentId !== null
-        ? 'On-chain agent ID stored'
-        : 'No on-chain ID to store; step completed',
+      message: onChainAgentId !== null ? 'On-chain agent ID stored' : 'No on-chain ID to store; step completed',
     });
 
     currentStepNumber = 5;
@@ -391,9 +368,7 @@ export async function agentRoutes(app: FastifyInstance) {
     };
 
     const sendEvent = (event: RegistrationProgressEvent) => {
-      if (reply.raw.writableEnded) {
-        return;
-      }
+      if (reply.raw.writableEnded) return;
 
       reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
 
@@ -436,14 +411,15 @@ export async function agentRoutes(app: FastifyInstance) {
     let responseAgent = result.agent;
 
     if (canRegisterAgentOnChain()) {
-      const agentURI = buildPolicyMintAgentUri();
+      const frontendUrl = process.env.POLICYMINT_FRONTEND_URL ?? 'https://your-vercel-frontend-url.vercel.app';
+      const agentURI = buildCanonicalAgentURI(frontendUrl);
       let onChainRegistration: { agentId: bigint; txHash: `0x${string}` } | null = null;
 
       try {
         onChainRegistration = await registerAgentOnChain({
-          name: body.data.name,
-          description: buildLegacyAgentDescription(body.data.strategyType),
-          capabilities: buildLegacyCapabilities(),
+          name: CANONICAL_AGENT_NAME,
+          description: CANONICAL_AGENT_DESCRIPTION,
+          capabilities: [...CANONICAL_AGENT_CAPABILITIES],
           agentURI,
         });
       } catch (err) {
@@ -453,13 +429,13 @@ export async function agentRoutes(app: FastifyInstance) {
       if (onChainRegistration) {
         const { agentId, txHash } = onChainRegistration;
 
-        const agentBeforeClaim = await prisma.agent.findUnique({
+        const agentBeforeClaim = (await prisma.agent.findUnique({
           where: { id: result.agent.id },
           select: {
             id: true,
             vaultClaimedAt: true,
           },
-        } as never) as { id: string; vaultClaimedAt: Date | null } | null;
+        } as never)) as { id: string; vaultClaimedAt: Date | null } | null;
 
         responseAgent = await prisma.agent.update({
           where: { id: result.agent.id },
@@ -497,15 +473,13 @@ export async function agentRoutes(app: FastifyInstance) {
         }
       }
     } else {
-      app.log.warn(
-        'IDENTITY_REGISTRY_ADDRESS/AGENT_REGISTRY_ADDRESS missing; skipping on-chain registration',
-      );
+      app.log.warn('IDENTITY_REGISTRY_ADDRESS/AGENT_REGISTRY_ADDRESS missing; skipping on-chain registration');
     }
 
     return reply.status(201).send({
       agent: responseAgent,
       apiKey: result.apiKey,
-      _notice: 'Store your apiKey securely. It will not be shown again.'
+      _notice: 'Store your apiKey securely. It will not be shown again.',
     });
   });
 }

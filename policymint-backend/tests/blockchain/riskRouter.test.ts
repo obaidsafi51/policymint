@@ -78,7 +78,10 @@ describe('riskRouter', () => {
   it('confirms successful trade intent transaction', async () => {
     const { waitForTradeIntentConfirmation } = await import('../../src/lib/blockchain/riskRouter');
 
-    await expect(waitForTradeIntentConfirmation(`0x${'c'.repeat(64)}` as `0x${string}`)).resolves.toBeUndefined();
+    await expect(waitForTradeIntentConfirmation(`0x${'c'.repeat(64)}` as `0x${string}`)).resolves.toEqual({
+      txHash: `0x${'c'.repeat(64)}`,
+      confirmed: true,
+    });
 
     expect(waitForReceiptMock).toHaveBeenCalledWith({
       hash: `0x${'c'.repeat(64)}`,
