@@ -1,11 +1,12 @@
 import { env } from '../../config/env.js';
 import { logger } from '../logger.js';
 import { AGENT_REGISTRY_ABI } from './abis.js';
-import { agentAccount, operatorAccount, operatorWalletClient, publicClient } from './client.js';
+import { operatorAccount, operatorWalletClient, publicClient } from './client.js';
 import { txQueue } from './txQueue.js';
 import { parseEventLogs } from 'viem';
 
 export interface RegisterAgentParams {
+  agentWalletAddress: `0x${string}`;
   name: string;
   description: string;
   capabilities: string[];
@@ -33,7 +34,7 @@ export function canRegisterAgentOnChain() {
 }
 
 export async function findRegisteredAgentByWallet(
-  walletAddress: `0x${string}` = agentAccount.address,
+  walletAddress: `0x${string}`,
 ): Promise<ExistingAgentRegistration | null> {
   if (!AGENT_REGISTRY) {
     return null;
@@ -77,7 +78,7 @@ export async function registerAgentOnChain(
       name: params.name,
       capabilities: params.capabilities,
       operatorWallet: operatorAccount.address,
-      agentWallet: agentAccount.address,
+      agentWallet: params.agentWalletAddress,
     },
     'Submitting register transaction',
   );
@@ -87,7 +88,7 @@ export async function registerAgentOnChain(
       address: AGENT_REGISTRY,
       abi: AGENT_REGISTRY_ABI,
       functionName: 'register',
-      args: [agentAccount.address, params.name, params.description, params.capabilities, params.agentURI],
+      args: [params.agentWalletAddress, params.name, params.description, params.capabilities, params.agentURI],
       account: operatorAccount,
     }),
   );
