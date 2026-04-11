@@ -52,6 +52,7 @@ describe('registerAgentOnChain', () => {
     const { registerAgentOnChain } = await import('../../src/lib/blockchain/agentRegistry');
 
     await registerAgentOnChain({
+      agentWalletAddress: '0x0000000000000000000000000000000000000002',
       name: 'Alpha Agent',
       description: 'Momentum strategy agent',
       capabilities: ['policy-evaluation', 'risk-routing'],
@@ -90,6 +91,7 @@ describe('registerAgentOnChain', () => {
     const { registerAgentOnChain } = await import('../../src/lib/blockchain/agentRegistry');
 
     const result = await registerAgentOnChain({
+      agentWalletAddress: '0x0000000000000000000000000000000000000002',
       name: 'Alpha Agent',
       description: 'Momentum strategy agent',
       capabilities: ['policy-evaluation', 'risk-routing'],
@@ -116,6 +118,7 @@ describe('registerAgentOnChain', () => {
 
     await expect(
       registerAgentOnChain({
+        agentWalletAddress: '0x0000000000000000000000000000000000000002',
         name: 'Alpha Agent',
         description: 'Momentum strategy agent',
         capabilities: ['policy-evaluation', 'risk-routing'],
@@ -134,6 +137,7 @@ describe('registerAgentOnChain', () => {
 
     await expect(
       registerAgentOnChain({
+        agentWalletAddress: '0x0000000000000000000000000000000000000002',
         name: 'Alpha Agent',
         description: 'Momentum strategy agent',
         capabilities: ['policy-evaluation', 'risk-routing'],
