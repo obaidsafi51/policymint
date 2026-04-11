@@ -41,6 +41,12 @@ export default function RegisterAgentPage() {
   }, [authenticated]);
 
   async function loadAgentWalletFromMetaMask() {
+    if (!authenticated || !sessionAddress) {
+      setAgentWallet('');
+      setAgentWalletError('Sign in with your operator wallet first, then load a different account for agent wallet.');
+      return;
+    }
+
     if (typeof window === 'undefined' || !(window as Window & { ethereum?: { request: (args: { method: string }) => Promise<string[]> } }).ethereum) {
       setAgentWalletError('MetaMask is not available in this browser.');
       return;
@@ -56,6 +62,12 @@ export default function RegisterAgentPage() {
       const normalizedAccounts = accounts.map((account: string) => account.toLowerCase());
       if (normalizedAccounts.length === 0) {
         setAgentWalletError('No wallet accounts were returned by MetaMask.');
+        return;
+      }
+
+      if (connectedAddress && connectedAddress.toLowerCase() !== sessionAddress.toLowerCase()) {
+        setAgentWallet('');
+        setAgentWalletError('Connected wallet differs from signed-in operator wallet. Reconnect MetaMask with the operator wallet or sign in again.');
         return;
       }
 
@@ -143,6 +155,8 @@ export default function RegisterAgentPage() {
       <section className="relative z-10 w-full overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[color-mix(in_srgb,var(--bg-surface)_82%,transparent)] md:grid md:grid-cols-[1fr_420px]">
         <AgentRegistrationForm
           operatorWallet={walletAddress || 'Connect + sign in wallet to continue'}
+          connectedWallet={connectedAddress ?? undefined}
+          signedInWallet={sessionAddress ?? undefined}
           agentWallet={agentWallet || 'Not loaded yet'}
           onLoadAgentWallet={() => {
             void loadAgentWalletFromMetaMask();

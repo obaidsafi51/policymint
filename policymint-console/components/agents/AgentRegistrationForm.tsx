@@ -16,6 +16,8 @@ export type AgentRegistrationFormValues = z.infer<typeof registrationSchema>;
 
 interface AgentRegistrationFormProps {
   operatorWallet: string;
+  connectedWallet?: string;
+  signedInWallet?: string;
   agentWallet: string;
   onLoadAgentWallet: () => void;
   isLoadingAgentWallet?: boolean;
@@ -29,6 +31,8 @@ interface AgentRegistrationFormProps {
 
 export function AgentRegistrationForm({
   operatorWallet,
+  connectedWallet,
+  signedInWallet,
   agentWallet,
   onLoadAgentWallet,
   isLoadingAgentWallet,
@@ -61,6 +65,13 @@ export function AgentRegistrationForm({
       ? 'bg-[var(--bg-elevated)] border-[var(--border-focus)] text-[var(--text-brand)]'
       : 'bg-[var(--bg-card)] border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--border-hover)]';
   }
+
+  const normalizedConnectedWallet = connectedWallet?.toLowerCase() ?? '';
+  const normalizedSignedInWallet = signedInWallet?.toLowerCase() ?? '';
+  const hasWalletMismatch =
+    Boolean(normalizedConnectedWallet) &&
+    Boolean(normalizedSignedInWallet) &&
+    normalizedConnectedWallet !== normalizedSignedInWallet;
 
   return (
     <form
@@ -97,6 +108,21 @@ export function AgentRegistrationForm({
           value={operatorWallet}
           className="mt-1 h-8 w-full rounded-md border border-[var(--border-default)] bg-[var(--bg-card)] px-3 font-mono text-xs text-[var(--text-secondary)]"
         />
+        <div className="mt-2 grid grid-cols-1 gap-1 text-[11px] normal-case tracking-normal text-[var(--text-secondary)] md:grid-cols-2">
+          <p>
+            <span className="text-[var(--text-tertiary)]">Connected:</span>{' '}
+            <span className="font-mono">{connectedWallet || 'Not connected'}</span>
+          </p>
+          <p>
+            <span className="text-[var(--text-tertiary)]">Signed-in:</span>{' '}
+            <span className="font-mono">{signedInWallet || 'Not signed in'}</span>
+          </p>
+        </div>
+        {hasWalletMismatch ? (
+          <span className="mt-1 block text-[11px] normal-case tracking-normal text-[var(--text-danger)]">
+            Connected wallet and signed-in operator wallet do not match.
+          </span>
+        ) : null}
         {submitError ? <span className="mt-1 block text-[11px] text-[var(--text-danger)]">{submitError}</span> : null}
       </label>
 
