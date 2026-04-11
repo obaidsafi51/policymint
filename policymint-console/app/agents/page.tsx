@@ -3,9 +3,8 @@
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
-import { buildApiUrl } from '@/lib/api';
+import { consoleApiRequest } from '@/lib/api';
 import { txExplorerBaseUrl, txExplorerLink } from '@/lib/explorer';
-import { fetcher } from '@/lib/fetcher';
 
 interface AgentDetails {
   id: string;
@@ -14,6 +13,7 @@ interface AgentDetails {
   registrationTxHash: string | null;
   chainId: number;
   isActive: boolean;
+  vaultClaimedAt: string | null;
 }
 
 export default function AgentsPage() {
@@ -27,7 +27,26 @@ export default function AgentsPage() {
       const entries = await Promise.all(
         agentIds.map(async (agentId) => {
           try {
-            const details = await fetcher<AgentDetails>(buildApiUrl(`/v1/agents/${agentId}`));
+            const response = await consoleApiRequest<{
+              id: string;
+              name: string;
+              chain_id: number;
+              erc8004_token_id: string | null;
+              registration_tx_hash: string | null;
+              vault_claimed_at: string | null;
+              is_active: boolean;
+            }>(`/v1/agents/${agentId}/profile`);
+
+            const details: AgentDetails = {
+              id: response.data.id,
+              name: response.data.name,
+              chainId: response.data.chain_id,
+              erc8004TokenId: response.data.erc8004_token_id,
+              registrationTxHash: response.data.registration_tx_hash,
+              vaultClaimedAt: response.data.vault_claimed_at,
+              isActive: response.data.is_active,
+            };
+
             return {
               agentId,
               details,
@@ -81,6 +100,7 @@ export default function AgentsPage() {
               <div className="mt-2 grid gap-1 text-xs text-[var(--text-secondary)]">
                 <p>Name: <span className="text-[var(--text-primary)]">{details?.name ?? 'Unavailable'}</span></p>
                 <p>Token ID: <span className="font-mono text-[var(--text-primary)]">{details?.erc8004TokenId ?? 'Not minted'}</span></p>
+                <p>Vault: <span className="text-[var(--text-primary)]">{details?.vaultClaimedAt ? 'Claimed' : 'Pending'}</span></p>
                 <p>Status: <span className={details?.isActive ? 'text-[var(--text-brand)]' : 'text-[var(--text-secondary)]'}>{details ? (details.isActive ? 'Active' : 'Inactive') : 'Unknown'}</span></p>
               </div>
               <div className="mt-3 flex gap-2">
