@@ -8,15 +8,14 @@ import { X } from 'lucide-react';
 
 export const registrationSchema = z.object({
   name: z.string().min(3, 'Agent name must be at least 3 characters').max(50, 'Agent name must be at most 50 characters'),
-  strategyType: z.enum(['MOMENTUM', 'REBALANCING']),
+  strategyType: z.enum(['MOMENTUM', 'MEAN_REVERSION', 'REBALANCING']),
   description: z.string().max(200, 'Description must be 200 characters or less').optional().default(''),
 });
 
 export type AgentRegistrationFormValues = z.infer<typeof registrationSchema>;
 
 interface AgentRegistrationFormProps {
-  operatorWallet: string;
-  agentWallet: string;
+  walletAddress: string;
   isSubmitting: boolean;
   isSubmitDisabled?: boolean;
   submitError?: string;
@@ -25,8 +24,7 @@ interface AgentRegistrationFormProps {
 }
 
 export function AgentRegistrationForm({
-  operatorWallet,
-  agentWallet,
+  walletAddress,
   isSubmitting,
   isSubmitDisabled,
   submitError,
@@ -42,9 +40,9 @@ export function AgentRegistrationForm({
   } = useForm<AgentRegistrationFormValues>({
     resolver: zodResolver(registrationSchema),
     defaultValues: {
-      name: initialValues?.name ?? 'PolicyMint',
+      name: initialValues?.name ?? '',
       strategyType: initialValues?.strategyType ?? 'MOMENTUM',
-      description: initialValues?.description ?? 'Policy-protected autonomous trading agent with provable risk controls. Enforces spend caps, venue allowlists, and daily loss budgets via EIP-712 signed validation artifacts on every trade intent.',
+      description: initialValues?.description ?? '',
     },
   });
 
@@ -85,33 +83,31 @@ export function AgentRegistrationForm({
       </label>
 
       <label className="block text-[11px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">
-        Operator wallet (SIWE)
+        Deployer wallet
         <input
           readOnly
-          value={operatorWallet}
+          value={walletAddress}
           className="mt-1 h-8 w-full rounded-md border border-[var(--border-default)] bg-[var(--bg-card)] px-3 font-mono text-xs text-[var(--text-secondary)]"
         />
         {submitError ? <span className="mt-1 block text-[11px] text-[var(--text-danger)]">{submitError}</span> : null}
       </label>
 
-      <label className="block text-[11px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">
-        Agent wallet (on-chain identity)
-        <input
-          readOnly
-          value={agentWallet}
-          className="mt-1 h-8 w-full rounded-md border border-[var(--border-default)] bg-[var(--bg-card)] px-3 font-mono text-xs text-[var(--text-secondary)]"
-        />
-      </label>
-
       <div className="space-y-2">
         <p className="text-[11px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">Strategy type</p>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <button
             type="button"
             onClick={() => setValue('strategyType', 'MOMENTUM', { shouldValidate: true })}
             className={`focus-ring h-8 rounded-md border text-xs font-semibold transition-colors ${strategyClass(strategyType === 'MOMENTUM')}`}
           >
             Momentum
+          </button>
+          <button
+            type="button"
+            onClick={() => setValue('strategyType', 'MEAN_REVERSION', { shouldValidate: true })}
+            className={`focus-ring h-8 rounded-md border text-xs font-semibold transition-colors ${strategyClass(strategyType === 'MEAN_REVERSION')}`}
+          >
+            Mean Reversion
           </button>
           <button
             type="button"
@@ -139,7 +135,7 @@ export function AgentRegistrationForm({
         disabled={isSubmitting || isSubmitDisabled}
         className="focus-ring inline-flex h-9 w-full items-center justify-center rounded-lg bg-[var(--text-brand)] px-4 text-sm font-extrabold uppercase tracking-[0.12em] text-[var(--text-on-brand)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        Register Agent
+        Initialize Smart Agent
       </button>
     </form>
   );

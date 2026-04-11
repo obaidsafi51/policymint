@@ -3,10 +3,9 @@ import { StrategyLoop } from './agent/loop.js';
 import { env } from './config/env.js';
 import { validateStartupConfiguration } from './config/startup.js';
 import { prisma } from './db/client.js';
-import { registerAgentOnChain } from './lib/blockchain/agentRegistry.js';
+import { findRegisteredAgentByWallet, registerAgentOnChain } from './lib/blockchain/agentRegistry.js';
 import { claimHackathonAllocation } from './lib/blockchain/hackathonVault.js';
 import { getRiskRouterIntentNonce } from './lib/blockchain/riskRouter.js';
-import { agentAccount } from './lib/blockchain/client.js';
 import {
   buildCanonicalAgentURI,
   CANONICAL_AGENT_CAPABILITIES,
@@ -86,15 +85,17 @@ async function ensureStartupAgentRegistered(agentUuid: string, appLog: { info: F
     }
 
     appLog.warn(
-      {
-        agent_id: agentUuid,
-        agentWallet: agentAccount.address,
-        contract: 'AgentRegistry',
-      },
-      'agentWallet already registered on-chain, no DB record found — awaiting UI registration',
+      { agent_id: agentUuid },
+      'Agent wallet is already registered on-chain; resolving existing registration from logs',
     );
 
-    return;
+    const existingRegistration = await findRegisteredAgentByWallet();
+    if (!existingRegistration) {
+      throw error;
+    }
+
+    agentId = existingRegistration.agentId;
+    txHash = existingRegistration.txHash;
   }
 
   await prisma.agent.update({

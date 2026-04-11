@@ -26,23 +26,13 @@ interface RegistrationEvent {
       erc8004TokenId?: string | null;
       registrationTxHash?: string | null;
     };
-    agent_id?: string;
-    erc8004_token_id?: string | null;
-    vault_claim_tx_hash?: string | null;
-    vault_claim_status?: 'claimed' | 'pending_retry' | 'skipped';
-    vault_claim_error?: string | null;
     apiKey?: string;
   };
 }
 
 interface RegistrationResult {
   registrationId?: string;
-  agentUuid: string;
-  erc8004TokenId: string | null;
-  registrationTxHash: string | null;
-  vaultClaimTxHash: string | null;
-  vaultClaimStatus: 'claimed' | 'pending_retry' | 'skipped';
-  vaultClaimError: string | null;
+  agentId: string;
   apiKey: string;
   txHashes: string[];
 }
@@ -71,6 +61,10 @@ function initialSteps(): RegistrationStepItem[] {
 }
 
 function mapStrategyType(strategyType: AgentRegistrationFormValues['strategyType']) {
+  if (strategyType === 'MEAN_REVERSION') {
+    return 'CUSTOM';
+  }
+
   return strategyType;
 }
 
@@ -168,12 +162,7 @@ export function useAgentRegistration() {
 
     completeRegistration({
       registrationId: 'mock-registration',
-      agentUuid: '00000000-0000-7000-8000-000000000001',
-      erc8004TokenId: '42',
-      registrationTxHash: '0x9a5e4b38179f56d478f6d805fbe580d46f42c9db690ed2f8dcb152dd75edbd9a',
-      vaultClaimTxHash: '0x9a5e4b38179f56d478f6d805fbe580d46f42c9db690ed2f8dcb152dd75edbd9a',
-      vaultClaimStatus: 'claimed',
-      vaultClaimError: null,
+      agentId: '0x1234abcd00000000000000000000000000abcd12',
       apiKey: 'pm_live_mock_registration_token_0001',
       txHashes: [
         '0x9a5e4b38179f56d478f6d805fbe580d46f42c9db690ed2f8dcb152dd75edbd9a',
@@ -206,12 +195,7 @@ export function useAgentRegistration() {
 
     completeRegistration({
       registrationId: undefined,
-      agentUuid: data.agent?.id ?? 'unknown-agent',
-      erc8004TokenId: data.agent?.erc8004TokenId ?? null,
-      registrationTxHash: data.agent?.registrationTxHash ?? null,
-      vaultClaimTxHash: null,
-      vaultClaimStatus: data.agent?.erc8004TokenId ? 'pending_retry' : 'skipped',
-      vaultClaimError: null,
+      agentId: data.agent?.erc8004TokenId || data.agent?.id || 'unknown-agent',
       apiKey: data.apiKey ?? '',
       txHashes: txHash ? [txHash] : [],
     });
@@ -241,15 +225,10 @@ export function useAgentRegistration() {
         }
 
         if (parsed.done) {
-          const agentUuid = parsed.result?.agent_id || parsed.result?.agent?.id || 'unknown-agent';
+          const agentId = parsed.result?.agent?.erc8004TokenId || parsed.result?.agent?.id || 'unknown-agent';
           completeRegistration({
             registrationId: id,
-            agentUuid,
-            erc8004TokenId: parsed.result?.erc8004_token_id ?? parsed.result?.agent?.erc8004TokenId ?? null,
-            registrationTxHash: parsed.result?.agent?.registrationTxHash ?? null,
-            vaultClaimTxHash: parsed.result?.vault_claim_tx_hash ?? null,
-            vaultClaimStatus: parsed.result?.vault_claim_status ?? 'skipped',
-            vaultClaimError: parsed.result?.vault_claim_error ?? null,
+            agentId,
             apiKey: parsed.result?.apiKey ?? '',
             txHashes: txHashesRef.current,
           });
@@ -281,7 +260,6 @@ export function useAgentRegistration() {
 
     const body = {
       name: payload.name,
-      description: payload.description,
       walletAddress: payload.walletAddress,
       strategyType: mapStrategyType(payload.strategyType),
       metadataUri: payload.description?.trim()
@@ -331,7 +309,6 @@ export function useAgentRegistration() {
         credentials: 'include',
         body: JSON.stringify({
           name: payload.name,
-          description: payload.description,
           walletAddress: payload.walletAddress,
           strategyType: mapStrategyType(payload.strategyType),
           chainId: payload.chainId,
@@ -362,47 +339,6 @@ export function useAgentRegistration() {
     await register(lastPayload);
   }, [lastPayload, register]);
 
-  const retryVaultClaim = useCallback(async () => {
-    if (!result?.agentUuid) {
-      return;
-    }
-
-    const response = await fetch(buildApiUrl(`/v1/agents/${result.agentUuid}/retry-vault-claim`), {
-      method: 'POST',
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || 'Vault claim retry failed');
-    }
-
-    const data = (await response.json()) as {
-      vault_claim_tx_hash?: string | null;
-      status?: 'claimed' | 'already_claimed';
-    };
-
-    const nextTxHashes = data.vault_claim_tx_hash
-      ? Array.from(new Set([...txHashesRef.current, data.vault_claim_tx_hash]))
-      : txHashesRef.current;
-
-    setResult((prev) => {
-      if (!prev) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        vaultClaimTxHash: data.vault_claim_tx_hash ?? prev.vaultClaimTxHash,
-        vaultClaimStatus: 'claimed',
-        vaultClaimError: null,
-        txHashes: nextTxHashes,
-      };
-    });
-
-    txHashesRef.current = nextTxHashes;
-  }, [result?.agentUuid]);
-
   return {
     phase,
     steps,
@@ -412,6 +348,5 @@ export function useAgentRegistration() {
     isRegistering,
     register,
     retry,
-    retryVaultClaim,
   };
 }

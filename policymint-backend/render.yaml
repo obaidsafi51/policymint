@@ -4,7 +4,7 @@ services:
     env: node
     region: oregon
     plan: free
-    buildCommand: npm install --include=dev && npm run build && mkdir -p bin && curl --proto '=https' --tlsv1.2 -LsSf https://github.com/krakenfx/kraken-cli/releases/latest/download/kraken-cli-installer.sh | sh && (cp ~/.cargo/bin/kraken bin/kraken 2>/dev/null || cp /opt/render/.cargo/bin/kraken bin/kraken) && chmod +x bin/kraken
+    buildCommand: npm ci && npm run build
     startCommand: node dist/server.js
     healthCheckPath: /health
     envVars:
@@ -37,18 +37,6 @@ services:
       - key: PRISM_BASE_URL
         value: https://api.prismapi.ai
       - key: INTERNAL_SERVICE_KEY
-        sync: false
-      - key: KRAKEN_API_KEY
-        sync: false
-      - key: KRAKEN_API_SECRET
-        sync: false
-      - key: KRAKEN_CLI_PATH
-        value: ./bin/kraken
-      - key: KRAKEN_PAPER_TRADING
-        value: "true"
-      - key: KRAKEN_EXECUTION_ENABLED
-        value: "false"
-      - key: HACKATHON_START_TS
         sync: false
       - key: STRATEGY_TICK_INTERVAL_MS
         value: "450000"
