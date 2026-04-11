@@ -18,6 +18,7 @@ interface RegistrationSuccessProps {
   txHashes?: string[];
   chainId?: number;
   onRetryVaultClaim?: () => Promise<void>;
+  dashboardHref?: string;
 }
 
 export function RegistrationSuccess({
@@ -32,6 +33,7 @@ export function RegistrationSuccess({
   txHashes = [],
   chainId,
   onRetryVaultClaim,
+  dashboardHref = '/dashboard',
 }: RegistrationSuccessProps) {
   const [showApiKey, setShowApiKey] = useState(false);
   const [retryingVaultClaim, setRetryingVaultClaim] = useState(false);
@@ -207,7 +209,7 @@ export function RegistrationSuccess({
 
       <div className="mt-6">
         <Link
-          href="/dashboard"
+          href={dashboardHref}
           className="focus-ring inline-flex h-9 w-full items-center justify-center rounded-lg bg-[var(--bg-elevated)] px-4 text-sm font-semibold text-[var(--text-primary)] hover:opacity-90"
         >
           Go to Dashboard
