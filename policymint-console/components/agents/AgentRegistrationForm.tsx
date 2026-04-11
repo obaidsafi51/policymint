@@ -19,6 +19,7 @@ interface AgentRegistrationFormProps {
   connectedWallet?: string;
   signedInWallet?: string;
   agentWallet: string;
+  walletDebugInfo?: string;
   onLoadAgentWallet: () => void;
   isLoadingAgentWallet?: boolean;
   agentWalletError?: string;
@@ -34,6 +35,7 @@ export function AgentRegistrationForm({
   connectedWallet,
   signedInWallet,
   agentWallet,
+  walletDebugInfo,
   onLoadAgentWallet,
   isLoadingAgentWallet,
   agentWalletError,
@@ -144,6 +146,11 @@ export function AgentRegistrationForm({
             className="h-8 w-full rounded-md border border-[var(--border-default)] bg-[var(--bg-card)] px-3 font-mono text-xs text-[var(--text-secondary)]"
           />
         </div>
+        {walletDebugInfo ? (
+          <span className="mt-1 block text-[11px] normal-case tracking-normal text-[var(--text-tertiary)]">
+            {walletDebugInfo}
+          </span>
+        ) : null}
         {agentWalletError ? <span className="mt-1 block text-[11px] text-[var(--text-danger)]">{agentWalletError}</span> : null}
       </label>
 
