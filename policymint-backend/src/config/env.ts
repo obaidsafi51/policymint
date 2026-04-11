@@ -8,6 +8,21 @@ const emptyToUndefined = (value: unknown): unknown => {
   return value;
 };
 
+const booleanFromEnv = (defaultValue: boolean) => z.preprocess(
+  (value: unknown) => {
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true') return true;
+      if (normalized === 'false') return false;
+    }
+
+    if (typeof value === 'boolean') return value;
+    if (value === undefined) return defaultValue;
+    return value;
+  },
+  z.boolean(),
+);
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3000),
@@ -50,9 +65,12 @@ const EnvSchema = z.object({
   KRAKEN_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
   KRAKEN_API_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
   KRAKEN_CLI_PATH: z.preprocess(emptyToUndefined, z.string().default('kraken')),
+  KRAKEN_PAPER_TRADING: booleanFromEnv(true),
+  KRAKEN_EXECUTION_ENABLED: booleanFromEnv(false),
   STRATEGY_TICK_INTERVAL_MS: z.coerce.number().int().positive().default(450000),
   STRATEGY_TRADE_AMOUNT_USD: z.coerce.number().positive().max(450).default(100),
   AGENT_ID: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  HACKATHON_START_TS: z.preprocess(emptyToUndefined, z.string().datetime().optional()),
   COMPETITION_WINDOW_START_AT: z.preprocess(emptyToUndefined, z.string().datetime().optional()),
   HACKATHON_BASELINE_ALLOCATION_USD: z.coerce.number().nonnegative().default(150),
 });

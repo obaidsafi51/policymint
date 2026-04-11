@@ -3,6 +3,7 @@ import { FeedbackType, type FeedbackTypeValue } from '../../lib/blockchain/reput
 export type EvaluationOutcome =
   | 'allow_confirmed'
   | 'allow_execution_failed'
+  | 'allow_execution_rejected'
   | 'block_policy_violation'
   | 'block_risk_router';
 
@@ -26,6 +27,13 @@ export function resolveReputationPayload(outcome: EvaluationOutcome): Reputation
         score: 50,
         feedbackType: FeedbackType.TRADE_EXECUTION,
         comment: 'Trade allowed but execution failed',
+      };
+
+    case 'allow_execution_rejected':
+      return {
+        score: 10,
+        feedbackType: FeedbackType.RISK_MANAGEMENT,
+        comment: 'Trade blocked: RiskRouter hard limit exceeded',
       };
 
     case 'block_policy_violation':

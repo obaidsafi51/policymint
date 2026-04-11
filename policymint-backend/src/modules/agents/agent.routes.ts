@@ -3,8 +3,10 @@ import { z } from 'zod';
 import { prisma } from '../../db/client.js';
 import { canRegisterAgentOnChain, registerAgentOnChain } from '../../lib/blockchain/agentRegistry.js';
 import { claimHackathonAllocation } from '../../lib/blockchain/hackathonVault.js';
+import { agentAccount, operatorAccount } from '../../lib/blockchain/client.js';
 import { generateApiKey } from '../../lib/crypto.js';
 import { generateId } from '../../lib/uuid.js';
+import { operatorJwtAuth } from '../../plugins/operator-auth.js';
 import { RegisterAgentSchema } from './agent.schema.js';
 import { createAgentRecord, getAgentById, registerAgent, updateAgentApiKey } from './agent.service.js';
 import {
@@ -39,6 +41,11 @@ interface RegistrationProgressEvent {
       erc8004TokenId: string | null;
       registrationTxHash: string | null;
     };
+    agent_id?: string;
+    erc8004_token_id?: string | null;
+    vault_claim_tx_hash?: string | null;
+    vault_claim_status?: 'claimed' | 'pending_retry' | 'skipped';
+    vault_claim_error?: string | null;
     apiKey: string;
   };
 }
@@ -115,6 +122,8 @@ async function processRegistrationJob(
     | null = null;
   let onChainAgentId: bigint | null = null;
   let revealedApiKey = '';
+  let vaultClaimTxHash: `0x${string}` | null = null;
+  let vaultClaimError: string | null = null;
 
   try {
     emitRegistrationEvent(job, {
@@ -155,11 +164,12 @@ async function processRegistrationJob(
     if (canRegisterAgentOnChain()) {
       const frontendUrl = process.env.POLICYMINT_FRONTEND_URL ?? 'https://your-vercel-frontend-url.vercel.app';
       const agentURI = buildCanonicalAgentURI(frontendUrl);
+      const strategyCapability = `strategy:${input.strategyType.toLowerCase()}`;
 
       const { agentId, txHash } = await registerAgentOnChain({
-        name: CANONICAL_AGENT_NAME,
-        description: CANONICAL_AGENT_DESCRIPTION,
-        capabilities: [...CANONICAL_AGENT_CAPABILITIES],
+        name: input.name,
+        description: input.description?.trim() || CANONICAL_AGENT_DESCRIPTION,
+        capabilities: [...CANONICAL_AGENT_CAPABILITIES, strategyCapability],
         agentURI,
       });
 
@@ -206,27 +216,43 @@ async function processRegistrationJob(
     });
 
     if (onChainAgentId !== null) {
-      const claimTxHash = await claimHackathonAllocation(onChainAgentId);
+      try {
+        const claimTxHash = await claimHackathonAllocation(onChainAgentId);
+        vaultClaimTxHash = claimTxHash;
 
-      const updatedAgent = await prisma.agent.update({
-        where: { id: createdAgent.id },
-        data: { vaultClaimedAt: new Date() },
-        select: {
-          id: true,
-          erc8004TokenId: true,
-          registrationTxHash: true,
-        },
-      } as never);
+        const updatedAgent = await prisma.agent.update({
+          where: { id: createdAgent.id },
+          data: { vaultClaimedAt: new Date() },
+          select: {
+            id: true,
+            erc8004TokenId: true,
+            registrationTxHash: true,
+          },
+        } as never);
 
-      responseAgent = updatedAgent;
+        responseAgent = updatedAgent;
 
-      emitRegistrationEvent(job, {
-        stepNumber: 3,
-        stepLabel: 'Claiming sandbox capital',
-        status: 'done',
-        message: 'Sandbox capital claimed',
-        txHash: claimTxHash,
-      });
+        emitRegistrationEvent(job, {
+          stepNumber: 3,
+          stepLabel: 'Claiming sandbox capital',
+          status: 'done',
+          message: 'Sandbox capital claimed',
+          txHash: claimTxHash,
+        });
+      } catch (claimErr) {
+        vaultClaimError = claimErr instanceof Error ? claimErr.message : 'Vault claim failed';
+        app.log.error(
+          { err: claimErr, registration_id: job.id, onchain_agent_id: onChainAgentId.toString() },
+          'Vault claim failed during registration; registration will continue and allow explicit retry',
+        );
+
+        emitRegistrationEvent(job, {
+          stepNumber: 3,
+          stepLabel: 'Claiming sandbox capital',
+          status: 'done',
+          message: `Vault claim failed — retry required: ${vaultClaimError}`,
+        });
+      }
     } else {
       emitRegistrationEvent(job, {
         stepNumber: 3,
@@ -287,6 +313,11 @@ async function processRegistrationJob(
           erc8004TokenId: responseAgent.erc8004TokenId,
           registrationTxHash: responseAgent.registrationTxHash,
         },
+        agent_id: responseAgent.id,
+        erc8004_token_id: responseAgent.erc8004TokenId,
+        vault_claim_tx_hash: vaultClaimTxHash,
+        vault_claim_status: onChainAgentId === null ? 'skipped' : vaultClaimTxHash ? 'claimed' : 'pending_retry',
+        vault_claim_error: vaultClaimError,
         apiKey: revealedApiKey,
       },
     });
@@ -304,7 +335,31 @@ async function processRegistrationJob(
 }
 
 export async function agentRoutes(app: FastifyInstance) {
-  app.post('/register', async (request, reply) => {
+  app.get('/register/config', { preHandler: operatorJwtAuth }, async (request, reply) => {
+    if (!request.operatorContext) {
+      return reply.status(401).send({ error: 'Operator authentication required' });
+    }
+
+    return reply.send({
+      operatorWallet: operatorAccount.address,
+      agentWallet: agentAccount.address,
+      contract: 'AgentRegistry',
+    });
+  });
+
+  app.post('/register', { preHandler: operatorJwtAuth }, async (request, reply) => {
+    if (!request.operatorContext) {
+      return reply.status(401).send({ error: 'Operator authentication required' });
+    }
+
+    const expectedOperatorWallet = operatorAccount.address.toLowerCase();
+    if (request.operatorContext.operatorWallet.toLowerCase() !== expectedOperatorWallet) {
+      return reply.status(403).send({
+        error: 'Connected SIWE wallet is not the configured operator wallet',
+        operatorWallet: operatorAccount.address,
+      });
+    }
+
     const body = RegisterAgentSchema.safeParse(request.body);
     if (!body.success) {
       return reply.status(422).send({ error: body.error.flatten() });
@@ -313,7 +368,9 @@ export async function agentRoutes(app: FastifyInstance) {
     const existingAgent = await prisma.agent.findFirst({
       where: {
         walletAddress: body.data.walletAddress.toLowerCase(),
-        name: body.data.name,
+        erc8004TokenId: {
+          not: null,
+        },
       },
       select: {
         id: true,
@@ -325,7 +382,7 @@ export async function agentRoutes(app: FastifyInstance) {
 
     if (existingAgent) {
       return reply.status(409).send({
-        message: 'Agent already registered for this wallet and name',
+        message: 'Agent already registered for this wallet',
         existingAgent,
       });
     }
@@ -337,6 +394,69 @@ export async function agentRoutes(app: FastifyInstance) {
     void processRegistrationJob(app, job, body.data);
 
     return reply.status(202).send({ registrationId });
+  });
+
+  app.post<{ Params: { id: string } }>('/:id/retry-vault-claim', { preHandler: operatorJwtAuth }, async (request, reply) => {
+    if (!request.operatorContext) {
+      return reply.status(401).send({ error: 'Operator authentication required' });
+    }
+
+    const expectedOperatorWallet = operatorAccount.address.toLowerCase();
+    if (request.operatorContext.operatorWallet.toLowerCase() !== expectedOperatorWallet) {
+      return reply.status(403).send({
+        error: 'Connected SIWE wallet is not the configured operator wallet',
+        operatorWallet: operatorAccount.address,
+      });
+    }
+
+    const parsedParams = AgentIdParamsSchema.safeParse(request.params);
+    if (!parsedParams.success) {
+      return reply.status(422).send({ error: parsedParams.error.flatten() });
+    }
+
+    const agent = await prisma.agent.findUnique({
+      where: { id: parsedParams.data.id },
+      select: {
+        id: true,
+        walletAddress: true,
+        erc8004TokenId: true,
+        vaultClaimedAt: true,
+      },
+    } as never);
+
+    if (!agent) {
+      return reply.status(404).send({ error: 'Agent not found' });
+    }
+
+    if (agent.walletAddress.toLowerCase() !== request.operatorContext.operatorWallet.toLowerCase()) {
+      return reply.status(403).send({ error: 'Operator is not authorized for this agent' });
+    }
+
+    if (!agent.erc8004TokenId) {
+      return reply.status(409).send({ error: 'Agent has no on-chain ERC8004 token id yet' });
+    }
+
+    if (agent.vaultClaimedAt) {
+      return reply.send({
+        agent_id: agent.id,
+        erc8004_token_id: agent.erc8004TokenId,
+        vault_claim_tx_hash: null,
+        status: 'already_claimed',
+      });
+    }
+
+    const claimTxHash = await claimHackathonAllocation(BigInt(agent.erc8004TokenId));
+    await prisma.agent.update({
+      where: { id: agent.id },
+      data: { vaultClaimedAt: new Date() },
+    });
+
+    return reply.send({
+      agent_id: agent.id,
+      erc8004_token_id: agent.erc8004TokenId,
+      vault_claim_tx_hash: claimTxHash,
+      status: 'claimed',
+    });
   });
 
   app.get('/register/:registrationId/progress', async (request, reply) => {
@@ -414,12 +534,13 @@ export async function agentRoutes(app: FastifyInstance) {
       const frontendUrl = process.env.POLICYMINT_FRONTEND_URL ?? 'https://your-vercel-frontend-url.vercel.app';
       const agentURI = buildCanonicalAgentURI(frontendUrl);
       let onChainRegistration: { agentId: bigint; txHash: `0x${string}` } | null = null;
+      const strategyCapability = `strategy:${body.data.strategyType.toLowerCase()}`;
 
       try {
         onChainRegistration = await registerAgentOnChain({
-          name: CANONICAL_AGENT_NAME,
-          description: CANONICAL_AGENT_DESCRIPTION,
-          capabilities: [...CANONICAL_AGENT_CAPABILITIES],
+          name: body.data.name,
+          description: body.data.description?.trim() || CANONICAL_AGENT_DESCRIPTION,
+          capabilities: [...CANONICAL_AGENT_CAPABILITIES, strategyCapability],
           agentURI,
         });
       } catch (err) {
