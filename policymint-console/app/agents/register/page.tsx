@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useChainId } from 'wagmi';
+import { useAccount, useChainId } from 'wagmi';
 import { Bot } from 'lucide-react';
 import { AgentRegistrationForm, type AgentRegistrationFormValues } from '@/components/agents/AgentRegistrationForm';
 import { RegistrationProgress } from '@/components/agents/RegistrationProgress';
@@ -11,6 +11,7 @@ import { useAgentRegistration } from '@/hooks/useAgentRegistration';
 import { formatAddress } from '@/lib/formatAddress';
 
 export default function RegisterAgentPage() {
+  const { address: connectedAddress } = useAccount();
   const chainId = useChainId();
   const { address: sessionAddress, authenticated } = useAuth();
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -58,9 +59,13 @@ export default function RegisterAgentPage() {
         return;
       }
 
-      const normalizedOperatorWallet = walletAddress.toLowerCase();
+      const excludedWallets = new Set(
+        [walletAddress, connectedAddress]
+          .filter((address): address is string => Boolean(address))
+          .map((address) => address.toLowerCase()),
+      );
       const nonOperatorAccounts = normalizedAccounts.filter(
-        (account) => account !== normalizedOperatorWallet,
+        (account) => !excludedWallets.has(account),
       );
 
       if (nonOperatorAccounts.length === 0) {
@@ -98,12 +103,6 @@ export default function RegisterAgentPage() {
       }
 
       setAgentWallet(selectedAgentWallet);
-
-      if (selectedAgentWallet === walletAddress.toLowerCase()) {
-        setAgentWalletError('Loaded wallet matches operator wallet. Switch MetaMask account if you want a separate agent wallet.');
-        return;
-      }
-
       setAgentWalletError(null);
     } catch (error) {
       setAgentWalletError(error instanceof Error ? error.message : 'Failed to load account from MetaMask.');
