@@ -58,16 +58,29 @@ export default function RegisterAgentPage() {
         return;
       }
 
-      let selectedAgentWallet = normalizedAccounts[0];
+      const normalizedOperatorWallet = walletAddress.toLowerCase();
+      const nonOperatorAccounts = normalizedAccounts.filter(
+        (account) => account !== normalizedOperatorWallet,
+      );
 
-      if (normalizedAccounts.length > 1) {
-        const options = normalizedAccounts
-          .map((account, index) => `${index + 1}. ${account}${account === walletAddress.toLowerCase() ? ' (operator)' : ''}`)
+      if (nonOperatorAccounts.length === 0) {
+        setAgentWallet('');
+        setAgentWalletError(
+          'MetaMask returned only your operator wallet. Switch to or add a second account for agent identity.',
+        );
+        return;
+      }
+
+      let selectedAgentWallet = nonOperatorAccounts[0];
+
+      if (nonOperatorAccounts.length > 1) {
+        const options = nonOperatorAccounts
+          .map((account, index) => `${index + 1}. ${account}`)
           .join('\n');
 
         const answer = window.prompt(
           `Choose MetaMask account number for Agent Wallet:\n\n${options}\n\nEnter number:`,
-          '2',
+          '1',
         );
 
         if (!answer) {
@@ -76,12 +89,12 @@ export default function RegisterAgentPage() {
         }
 
         const selectedIndex = Number(answer.trim()) - 1;
-        if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= normalizedAccounts.length) {
+        if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= nonOperatorAccounts.length) {
           setAgentWalletError('Invalid account selection. Please try again.');
           return;
         }
 
-        selectedAgentWallet = normalizedAccounts[selectedIndex];
+        selectedAgentWallet = nonOperatorAccounts[selectedIndex];
       }
 
       setAgentWallet(selectedAgentWallet);
