@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useIsFetching, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter } from 'next/navigation';
 import { PerformanceWindow } from '@/hooks/usePnL';
@@ -58,10 +58,10 @@ export function DashboardProvider({ children, agentId = DEFAULT_AGENT_ID }: Dash
     }
   }, [agentIds, pathname, routeAgentId, router]);
 
-  async function refreshAll() {
+  const refreshAll = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: ['agent', resolvedAgentId] });
     await queryClient.refetchQueries({ queryKey: ['agent', resolvedAgentId], type: 'active' });
-  }
+  }, [queryClient, resolvedAgentId]);
 
   const value = useMemo(
     () => ({
@@ -71,7 +71,7 @@ export function DashboardProvider({ children, agentId = DEFAULT_AGENT_ID }: Dash
       refreshAll,
       isRefreshing,
     }),
-    [resolvedAgentId, window, isRefreshing],
+    [resolvedAgentId, window, refreshAll, isRefreshing],
   );
 
   return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>;

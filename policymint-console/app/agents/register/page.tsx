@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useAccount, useChainId } from 'wagmi';
+import { useChainId } from 'wagmi';
 import { Bot } from 'lucide-react';
 import { AgentRegistrationForm, type AgentRegistrationFormValues } from '@/components/agents/AgentRegistrationForm';
 import { RegistrationProgress } from '@/components/agents/RegistrationProgress';
@@ -11,7 +11,6 @@ import { useAgentRegistration } from '@/hooks/useAgentRegistration';
 import { formatAddress } from '@/lib/formatAddress';
 
 export default function RegisterAgentPage() {
-  const { address: connectedAddress } = useAccount();
   const chainId = useChainId();
   const { address: sessionAddress, authenticated } = useAuth();
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -52,8 +51,8 @@ export default function RegisterAgentPage() {
     try {
       const ethereum = (window as Window & { ethereum: { request: (args: { method: string }) => Promise<string[]> } }).ethereum;
 
-      const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-      const normalizedAccounts = accounts.map((account) => account.toLowerCase());
+      const accounts = (await ethereum.request({ method: 'eth_requestAccounts' })) as string[];
+      const normalizedAccounts = accounts.map((account: string) => account.toLowerCase());
       if (normalizedAccounts.length === 0) {
         setAgentWalletError('No wallet accounts were returned by MetaMask.');
         return;
