@@ -221,9 +221,18 @@ export async function operatorAuthRoutes(app: FastifyInstance) {
       return sendAuthError(reply, 401, verification.code, 'Session token is invalid');
     }
 
+    const currentAgentIds = await resolveAgentIdsForWallet(verification.payload.operator_wallet);
+
     const now = Math.floor(Date.now() / 1000);
     if (verification.payload.exp > now) {
-      return reply.send(sessionEnvelope(verification.payload));
+      const refreshed = createOperatorJwt({
+        operatorWallet: verification.payload.operator_wallet,
+        agentIds: currentAgentIds,
+        ttlSeconds: SESSION_TTL_SECONDS,
+      });
+
+      setCookie(reply, OPERATOR_SESSION_COOKIE, encodeURIComponent(refreshed.token), SESSION_TTL_SECONDS);
+      return reply.send(sessionEnvelope(refreshed.payload));
     }
 
     const expiredBy = now - verification.payload.exp;
@@ -234,7 +243,7 @@ export async function operatorAuthRoutes(app: FastifyInstance) {
 
     const refreshed = createOperatorJwt({
       operatorWallet: verification.payload.operator_wallet,
-      agentIds: verification.payload.agent_ids,
+      agentIds: currentAgentIds,
       ttlSeconds: SESSION_TTL_SECONDS,
     });
 

@@ -17,7 +17,7 @@ import {
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: BarChart3, disabled: false },
-  { href: '#', label: 'Agents', icon: Bot, disabled: true },
+  { href: '/agents', label: 'Agents', icon: Bot, disabled: false },
   { href: '/agents/register', label: 'Register Agent', icon: Bot, disabled: false },
   { href: '#', label: 'Policies', icon: Shield, disabled: true },
   { href: '/simulate', label: 'Simulate', icon: Beaker, disabled: false },

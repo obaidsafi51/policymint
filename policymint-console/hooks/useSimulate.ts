@@ -122,7 +122,29 @@ export function useSimulate(agentUuid: string, agentTokenId: string) {
       });
 
       if (!response.ok) {
-        throw new Error(`Evaluation failed: ${response.statusText}`);
+        let errorMessage = response.statusText;
+
+        try {
+          const payload = (await response.json()) as {
+            error?: string | { message?: string };
+            message?: string;
+          };
+
+          if (typeof payload.error === 'string' && payload.error.length > 0) {
+            errorMessage = payload.error;
+          } else if (payload.error && typeof payload.error === 'object' && typeof payload.error.message === 'string') {
+            errorMessage = payload.error.message;
+          } else if (typeof payload.message === 'string' && payload.message.length > 0) {
+            errorMessage = payload.message;
+          }
+        } catch {
+          const fallbackText = await response.text().catch(() => '');
+          if (fallbackText) {
+            errorMessage = fallbackText;
+          }
+        }
+
+        throw new Error(`Evaluation failed: ${errorMessage || `HTTP ${response.status}`}`);
       }
 
       const policyEngine = (await response.json()) as EvaluateResponse;

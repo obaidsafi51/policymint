@@ -151,6 +151,11 @@ async function handleProxy(request: NextRequest, context: { params: Promise<{ pa
     const agentApiKey = process.env.AGENT_API_KEY;
     if (agentApiKey) {
       outboundHeaders.set('authorization', `Bearer ${agentApiKey}`);
+    } else {
+      const internalServiceKey = process.env.INTERNAL_SERVICE_KEY;
+      if (internalServiceKey) {
+        outboundHeaders.set('x-internal-key', internalServiceKey);
+      }
     }
   }
 
