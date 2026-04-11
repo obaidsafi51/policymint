@@ -47,29 +47,6 @@ export default function RegisterAgentPage() {
   );
 
   useEffect(() => {
-    if (phase !== 'SUCCESS' || !result) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const navigateToDashboard = async () => {
-      await refreshSession();
-      if (cancelled) {
-        return;
-      }
-
-      router.push(dashboardHref);
-    };
-
-    void navigateToDashboard();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [dashboardHref, phase, refreshSession, result, router]);
-
-  useEffect(() => {
     if (!authenticated) {
       setAgentWallet('');
       setAgentWalletError(null);
@@ -244,6 +221,10 @@ export default function RegisterAgentPage() {
               chainId={chainId}
               onRetryVaultClaim={retryVaultClaim}
               dashboardHref={dashboardHref}
+              onGoToDashboard={async () => {
+                await refreshSession();
+                router.push(dashboardHref);
+              }}
             />
           ) : null}
 
