@@ -373,6 +373,45 @@ async function runRoute<T>(
 }
 
 export async function consoleRoutes(app: FastifyInstance) {
+  app.get<{ Params: { id: string } }>('/:id/profile', async (request, reply) => {
+    const params = AgentIdParamsSchema.safeParse(request.params);
+    if (!params.success) return sendError(reply, 404, 'AGENT_NOT_FOUND', 'Agent not found');
+
+    const scopedAgent = await requireScopedAgent(request, reply, params.data.id);
+    if (!scopedAgent) return;
+
+    return runRoute(app, request, reply, '/v1/agents/:id/profile', scopedAgent.id, async () => {
+      const agent = await prisma.agent.findUnique({
+        where: { id: scopedAgent.id },
+        select: {
+          id: true,
+          name: true,
+          chainId: true,
+          erc8004TokenId: true,
+          registrationTxHash: true,
+          vaultClaimedAt: true,
+          isActive: true,
+        },
+      });
+
+      if (!agent) {
+        throw new Error('AGENT_NOT_FOUND');
+      }
+
+      return {
+        payload: {
+          id: agent.id,
+          name: agent.name,
+          chain_id: agent.chainId,
+          erc8004_token_id: agent.erc8004TokenId,
+          registration_tx_hash: agent.registrationTxHash,
+          vault_claimed_at: agent.vaultClaimedAt ? agent.vaultClaimedAt.toISOString() : null,
+          is_active: agent.isActive,
+        },
+      };
+    });
+  });
+
   app.get<{ Params: { id: string }; Querystring: z.infer<typeof EventsQuerySchema> }>('/:id/events', async (request, reply) => {
     const params = AgentIdParamsSchema.safeParse(request.params);
     if (!params.success) return sendError(reply, 404, 'AGENT_NOT_FOUND', 'Agent not found');
