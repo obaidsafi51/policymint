@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAccount, useChainId } from 'wagmi';
 import { Bot } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { AgentRegistrationForm, type AgentRegistrationFormValues } from '@/components/agents/AgentRegistrationForm';
 import { RegistrationProgress } from '@/components/agents/RegistrationProgress';
 import { RegistrationSuccess } from '@/components/agents/RegistrationSuccess';
@@ -11,9 +12,10 @@ import { useAgentRegistration } from '@/hooks/useAgentRegistration';
 import { formatAddress } from '@/lib/formatAddress';
 
 export default function RegisterAgentPage() {
+  const router = useRouter();
   const { address: connectedAddress } = useAccount();
   const chainId = useChainId();
-  const { address: sessionAddress, authenticated } = useAuth();
+  const { address: sessionAddress, authenticated, refreshSession } = useAuth();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [agentWallet, setAgentWallet] = useState<string>('');
   const [agentWalletError, setAgentWalletError] = useState<string | null>(null);
@@ -32,6 +34,40 @@ export default function RegisterAgentPage() {
   } = useAgentRegistration();
 
   const walletAddress = useMemo(() => sessionAddress ?? '', [sessionAddress]);
+  const dashboardHref = useMemo(
+    () => (result?.agentUuid ? `/dashboard/${result.agentUuid}` : '/dashboard'),
+    [result?.agentUuid],
+  );
+  const existingAgentDashboardHref = useMemo(
+    () =>
+      errorState?.alreadyRegistered?.id
+        ? `/dashboard/${errorState.alreadyRegistered.id}`
+        : '/dashboard',
+    [errorState?.alreadyRegistered?.id],
+  );
+
+  useEffect(() => {
+    if (phase !== 'SUCCESS' || !result) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const navigateToDashboard = async () => {
+      await refreshSession();
+      if (cancelled) {
+        return;
+      }
+
+      router.push(dashboardHref);
+    };
+
+    void navigateToDashboard();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboardHref, phase, refreshSession, result, router]);
 
   useEffect(() => {
     if (!authenticated) {
@@ -207,6 +243,7 @@ export default function RegisterAgentPage() {
               txHashes={result.txHashes}
               chainId={chainId}
               onRetryVaultClaim={retryVaultClaim}
+              dashboardHref={dashboardHref}
             />
           ) : null}
 
@@ -216,7 +253,7 @@ export default function RegisterAgentPage() {
               chainId={chainId}
               failedStep={errorState?.failedStep}
               errorMessage={errorState?.errorMessage}
-              onRetry={errorState ? () => void retry() : undefined}
+              onRetry={errorState && !errorState.alreadyRegistered ? () => void retry() : undefined}
             />
           ) : null}
 
@@ -243,6 +280,15 @@ export default function RegisterAgentPage() {
                 {errorState.alreadyRegistered.erc8004TokenId ? (
                   <p className="mt-1 font-mono text-xs text-[var(--text-brand)]">token: {formatAddress(errorState.alreadyRegistered.erc8004TokenId)}</p>
                 ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    router.push(existingAgentDashboardHref);
+                  }}
+                  className="focus-ring mt-3 inline-flex h-8 items-center rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3 text-sm font-semibold text-[var(--text-primary)] hover:opacity-90"
+                >
+                  Open Existing Agent
+                </button>
               </div>
             </section>
           ) : null}
