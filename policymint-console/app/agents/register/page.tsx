@@ -17,6 +17,7 @@ export default function RegisterAgentPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [agentWallet, setAgentWallet] = useState<string>('');
   const [agentWalletError, setAgentWalletError] = useState<string | null>(null);
+  const [walletDebugInfo, setWalletDebugInfo] = useState<string>('');
   const [isLoadingAgentWallet, setIsLoadingAgentWallet] = useState(false);
   const {
     phase,
@@ -43,23 +44,40 @@ export default function RegisterAgentPage() {
   async function loadAgentWalletFromMetaMask() {
     if (!authenticated || !sessionAddress) {
       setAgentWallet('');
+      setWalletDebugInfo('');
       setAgentWalletError('Sign in with your operator wallet first, then load a different account for agent wallet.');
       return;
     }
 
-    if (typeof window === 'undefined' || !(window as Window & { ethereum?: { request: (args: { method: string }) => Promise<string[]> } }).ethereum) {
+    if (typeof window === 'undefined' || !(window as Window & { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum) {
       setAgentWalletError('MetaMask is not available in this browser.');
       return;
     }
 
     setIsLoadingAgentWallet(true);
     setAgentWalletError(null);
+    setWalletDebugInfo('');
 
     try {
-      const ethereum = (window as Window & { ethereum: { request: (args: { method: string }) => Promise<string[]> } }).ethereum;
+      const ethereum = (window as Window & {
+        ethereum: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
+      }).ethereum;
 
-      const accounts = (await ethereum.request({ method: 'eth_requestAccounts' })) as string[];
+      await ethereum.request({
+        method: 'wallet_requestPermissions',
+        params: [{ eth_accounts: {} }],
+      });
+
+      const requestedAccounts = await ethereum.request({ method: 'eth_requestAccounts' });
+      const accounts = Array.isArray(requestedAccounts)
+        ? requestedAccounts.filter((account): account is string => typeof account === 'string')
+        : [];
       const normalizedAccounts = accounts.map((account: string) => account.toLowerCase());
+      setWalletDebugInfo(
+        normalizedAccounts.length > 0
+          ? `MetaMask returned ${normalizedAccounts.length} account(s): ${normalizedAccounts.join(', ')}`
+          : 'MetaMask returned 0 accounts.',
+      );
       if (normalizedAccounts.length === 0) {
         setAgentWalletError('No wallet accounts were returned by MetaMask.');
         return;
@@ -158,6 +176,7 @@ export default function RegisterAgentPage() {
           connectedWallet={connectedAddress ?? undefined}
           signedInWallet={sessionAddress ?? undefined}
           agentWallet={agentWallet || 'Not loaded yet'}
+          walletDebugInfo={walletDebugInfo || undefined}
           onLoadAgentWallet={() => {
             void loadAgentWalletFromMetaMask();
           }}
