@@ -1,6 +1,4 @@
 'use client';
-
-import Link from 'next/link';
 import { useState } from 'react';
 import { CheckCircle2, Copy, ExternalLink, Eye, EyeOff, TriangleAlert } from 'lucide-react';
 import { txExplorerLink } from '@/lib/explorer';
@@ -19,6 +17,7 @@ interface RegistrationSuccessProps {
   chainId?: number;
   onRetryVaultClaim?: () => Promise<void>;
   dashboardHref?: string;
+  onGoToDashboard?: () => Promise<void> | void;
 }
 
 export function RegistrationSuccess({
@@ -34,6 +33,7 @@ export function RegistrationSuccess({
   chainId,
   onRetryVaultClaim,
   dashboardHref = '/dashboard',
+  onGoToDashboard,
 }: RegistrationSuccessProps) {
   const [showApiKey, setShowApiKey] = useState(false);
   const [retryingVaultClaim, setRetryingVaultClaim] = useState(false);
@@ -208,12 +208,15 @@ export function RegistrationSuccess({
       ) : null}
 
       <div className="mt-6">
-        <Link
-          href={dashboardHref}
+        <button
+          type="button"
+          onClick={() => {
+            void onGoToDashboard?.();
+          }}
           className="focus-ring inline-flex h-9 w-full items-center justify-center rounded-lg bg-[var(--bg-elevated)] px-4 text-sm font-semibold text-[var(--text-primary)] hover:opacity-90"
         >
           Go to Dashboard
-        </Link>
+        </button>
       </div>
     </section>
   );
