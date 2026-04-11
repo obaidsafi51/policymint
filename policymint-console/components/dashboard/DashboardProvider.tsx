@@ -25,7 +25,7 @@ interface DashboardProviderProps {
 export function DashboardProvider({ children, agentId = DEFAULT_AGENT_ID }: DashboardProviderProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const { agentIds } = useAuth();
+  const { agentIds, loading: authLoading, authenticated } = useAuth();
   const queryClient = useQueryClient();
   const [window, setWindow] = useState<PerformanceWindow>('competition');
 
@@ -41,6 +41,14 @@ export function DashboardProvider({ children, agentId = DEFAULT_AGENT_ID }: Dash
   const isRefreshing = useIsFetching({ queryKey: ['agent', resolvedAgentId] }) > 0;
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!authenticated) {
+      return;
+    }
+
     if (agentIds.length === 0) {
       if (pathname.startsWith('/dashboard')) {
         router.replace('/onboarding');
@@ -56,7 +64,7 @@ export function DashboardProvider({ children, agentId = DEFAULT_AGENT_ID }: Dash
     if (routeAgentId && !agentIds.includes(routeAgentId)) {
       router.replace(`/dashboard/${agentIds[0]}`);
     }
-  }, [agentIds, pathname, routeAgentId, router]);
+  }, [agentIds, authLoading, authenticated, pathname, routeAgentId, router]);
 
   const refreshAll = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: ['agent', resolvedAgentId] });
