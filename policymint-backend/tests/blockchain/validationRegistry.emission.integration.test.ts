@@ -54,7 +54,7 @@ describeDb('ValidationRegistry emission integration', () => {
     return {
       agent_id: agentId,
       action_type: 'trade',
-      venue: 'kraken-spot',
+      venue: 'riskrouter',
       amount,
       token_in: 'ETH',
       token_out: 'USDC',

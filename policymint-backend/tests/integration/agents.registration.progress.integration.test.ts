@@ -2,6 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { buildApp } from '../../src/app';
 import { prisma } from '../../src/db/client';
 import { isValidUUIDv7 } from '../../src/lib/uuid';
+import { createOperatorJwt } from '../../src/lib/operator-jwt';
+import { operatorAccount } from '../../src/lib/blockchain/client';
 import { describeDb } from '../helpers/db';
 
 const { registerAgentOnChainMock, canRegisterAgentOnChainMock, claimHackathonAllocationMock } =
@@ -46,6 +48,7 @@ function extractSseEvents(rawPayload: string): ProgressEvent[] {
 
 describeDb('POST /v1/agents/register + GET /v1/agents/register/:registrationId/progress', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
+  let operatorToken: string;
 
   beforeAll(async () => {
     app = await buildApp();
@@ -63,6 +66,12 @@ describeDb('POST /v1/agents/register + GET /v1/agents/register/:registrationId/p
     canRegisterAgentOnChainMock.mockReturnValue(false);
     registerAgentOnChainMock.mockReset();
     claimHackathonAllocationMock.mockReset();
+
+    operatorToken = createOperatorJwt({
+      operatorWallet: operatorAccount.address,
+      agentIds: [],
+      ttlSeconds: 60 * 60,
+    }).token;
   });
 
   afterAll(async () => {
@@ -93,6 +102,9 @@ describeDb('POST /v1/agents/register + GET /v1/agents/register/:registrationId/p
     const registerResponse = await app.inject({
       method: 'POST',
       url: '/v1/agents/register',
+      headers: {
+        'x-operator-token': operatorToken,
+      },
       payload: {
         name: 'SSE Agent Alpha',
         walletAddress: '0xAbCdEf0123456789aBCdEf0123456789abCDef01',
@@ -135,6 +147,13 @@ describeDb('POST /v1/agents/register + GET /v1/agents/register/:registrationId/p
   });
 
   it('returns 409 when same wallet + name already exists', async () => {
+    canRegisterAgentOnChainMock.mockReturnValue(true);
+    registerAgentOnChainMock.mockResolvedValue({
+      agentId: BigInt(42),
+      txHash: `0x${'a'.repeat(64)}`,
+    });
+    claimHackathonAllocationMock.mockResolvedValue(`0x${'b'.repeat(64)}`);
+
     const payload = {
       name: 'Duplicate SSE Agent',
       walletAddress: '0xAbCdEf0123456789aBCdEf0123456789abCDef01',
@@ -144,6 +163,9 @@ describeDb('POST /v1/agents/register + GET /v1/agents/register/:registrationId/p
     const first = await app.inject({
       method: 'POST',
       url: '/v1/agents/register',
+      headers: {
+        'x-operator-token': operatorToken,
+      },
       payload,
     });
 
@@ -154,6 +176,9 @@ describeDb('POST /v1/agents/register + GET /v1/agents/register/:registrationId/p
     const second = await app.inject({
       method: 'POST',
       url: '/v1/agents/register',
+      headers: {
+        'x-operator-token': operatorToken,
+      },
       payload,
     });
 
