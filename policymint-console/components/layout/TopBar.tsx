@@ -2,6 +2,7 @@
 
 import { Bell, Settings } from 'lucide-react';
 import { useAccount, useChainId } from 'wagmi';
+import { usePathname } from 'next/navigation';
 import { WalletButton } from '@/components/shared/WalletButton';
 
 interface TopBarProps {
@@ -11,11 +12,27 @@ interface TopBarProps {
 export function TopBar({ title }: TopBarProps) {
   const { isConnected } = useAccount();
   const chainId = useChainId();
+  const pathname = usePathname();
+
+  const routeAgentId = (() => {
+    const segments = pathname.split('/').filter(Boolean);
+    if (segments.length >= 2 && segments[0] === 'dashboard') {
+      return segments[1];
+    }
+    return null;
+  })();
+
+  const agentBadge = routeAgentId
+    ? {
+        shortId: `#${routeAgentId.slice(0, 4).toUpperCase()}`,
+        label: `${routeAgentId.slice(0, 8)}…`,
+      }
+    : null;
 
   const pageLabel = title === 'simulate'
     ? 'Simulation'
     : title === 'agents'
-      ? 'Agent Registration'
+      ? 'Agents'
       : 'Dashboard Overview';
 
   const networkLabel = isConnected
@@ -37,8 +54,8 @@ export function TopBar({ title }: TopBarProps) {
         </div>
         {title === 'dashboard' ? (
           <div className="hidden items-center gap-2 rounded border border-[var(--border-default)] bg-[var(--bg-surface)] px-2 py-0.5 md:flex">
-            <span className="rounded bg-[var(--bg-brand)] px-1 font-mono text-[10px] text-[var(--text-brand)]">#0042</span>
-            <span className="text-[11px] text-[var(--text-secondary)]">Sentinel_Agent_v2</span>
+            <span className="rounded bg-[var(--bg-brand)] px-1 font-mono text-[10px] text-[var(--text-brand)]">{agentBadge?.shortId ?? '#----'}</span>
+            <span className="text-[11px] text-[var(--text-secondary)]">{agentBadge?.label ?? 'No agent selected'}</span>
           </div>
         ) : null}
       </div>
