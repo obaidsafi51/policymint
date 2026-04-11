@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAccount, useChainId } from 'wagmi';
 import { Bot } from 'lucide-react';
 import { AgentRegistrationForm, type AgentRegistrationFormValues } from '@/components/agents/AgentRegistrationForm';
@@ -13,8 +13,9 @@ import { formatAddress } from '@/lib/formatAddress';
 export default function RegisterAgentPage() {
   const { address: connectedAddress } = useAccount();
   const chainId = useChainId();
-  const { address: sessionAddress } = useAuth();
+  const { address: sessionAddress, authenticated } = useAuth();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [config, setConfig] = useState<{ operatorWallet: string; agentWallet: string } | null>(null);
   const {
     phase,
     steps,
@@ -24,13 +25,57 @@ export default function RegisterAgentPage() {
     isRegistering,
     register,
     retry,
+    retryVaultClaim,
   } = useAgentRegistration();
 
-  const walletAddress = useMemo(() => sessionAddress ?? connectedAddress ?? '', [connectedAddress, sessionAddress]);
+  const walletAddress = useMemo(() => sessionAddress ?? '', [sessionAddress]);
+
+  useEffect(() => {
+    if (!authenticated) {
+      setConfig(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadConfig = async () => {
+      try {
+        const response = await fetch('/api/proxy/v1/agents/register/config', {
+          method: 'GET',
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = (await response.json()) as { operatorWallet?: string; agentWallet?: string };
+        if (!cancelled && data.operatorWallet && data.agentWallet) {
+          setConfig({
+            operatorWallet: data.operatorWallet,
+            agentWallet: data.agentWallet,
+          });
+        }
+      } catch {
+        // no-op
+      }
+    };
+
+    void loadConfig();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated]);
 
   async function submit(values: AgentRegistrationFormValues) {
     if (!walletAddress) {
       setSubmitError('Connect and sign in with your wallet to register an agent.');
+      return;
+    }
+
+    if (config?.operatorWallet && walletAddress.toLowerCase() !== config.operatorWallet.toLowerCase()) {
+      setSubmitError('SIWE session wallet does not match configured operator wallet.');
       return;
     }
 
@@ -49,10 +94,16 @@ export default function RegisterAgentPage() {
 
       <section className="relative z-10 w-full overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[color-mix(in_srgb,var(--bg-surface)_82%,transparent)] md:grid md:grid-cols-[1fr_420px]">
         <AgentRegistrationForm
-          walletAddress={walletAddress || 'Connect + sign in wallet to continue'}
+          operatorWallet={walletAddress || 'Connect + sign in wallet to continue'}
+          agentWallet={config?.agentWallet ?? 'Loading agent wallet from backend...'}
           isSubmitting={isRegistering}
           isSubmitDisabled={!walletAddress}
           submitError={submitError ?? undefined}
+          initialValues={{
+            name: 'PolicyMint',
+            strategyType: 'MOMENTUM',
+            description: 'Policy-protected autonomous trading agent with provable risk controls. Enforces spend caps, venue allowlists, and daily loss budgets via EIP-712 signed validation artifacts on every trade intent.',
+          }}
           onSubmit={submit}
         />
 
@@ -60,10 +111,16 @@ export default function RegisterAgentPage() {
           {phase === 'SUCCESS' && result ? (
             <RegistrationSuccess
               registrationId={registrationId}
-              agentId={result.agentId}
+              agentUuid={result.agentUuid}
+              erc8004TokenId={result.erc8004TokenId}
+              registrationTxHash={result.registrationTxHash}
+              vaultClaimTxHash={result.vaultClaimTxHash}
+              vaultClaimStatus={result.vaultClaimStatus}
+              vaultClaimError={result.vaultClaimError}
               apiKey={result.apiKey}
               txHashes={result.txHashes}
               chainId={chainId}
+              onRetryVaultClaim={retryVaultClaim}
             />
           ) : null}
 
