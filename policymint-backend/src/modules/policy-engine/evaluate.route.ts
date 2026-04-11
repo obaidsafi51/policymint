@@ -12,9 +12,9 @@ import {
   canEmitReputationSignalOnChain,
   emitReputationSignal,
 } from '../../lib/blockchain/reputationRegistry.js';
+import { submitTradeIntent, waitForTradeIntentConfirmation } from '../../lib/blockchain/riskRouter.js';
 import { resolveReputationPayload, type EvaluationOutcome } from './reputation.mapper.js';
 import { captureErrorToSentry } from '../../lib/telemetry.js';
-import { executeTradeIntent, shouldSkipKrakenExecution, type TradeExecutionStatus } from './execution.router.js';
 
 const API_KEY_PREFIX = 'pm_live_';
 const PREFIX_LOOKUP_LENGTH = API_KEY_PREFIX.length + 8;
@@ -22,13 +22,6 @@ const RATE_LIMIT_TIME_WINDOW = env.NODE_ENV === 'test' ? '1 minute' : '1 second'
 type ExecutionState = 'confirmed' | 'unconfirmed' | 'failed' | 'not-applicable';
 type ExecutionErrorTag = 'execution_reverted' | 'execution_timeout' | 'rpc_error' | 'signing_error' | 'nonce_persist_failed';
 const REPUTATION_MAX_RETRIES = 3;
-
-function mapExecutionStatusToState(status: TradeExecutionStatus): ExecutionState {
-  if (status === 'confirmed') return 'confirmed';
-  if (status === 'pending' || status === 'timeout') return 'unconfirmed';
-  if (status === 'failed' || status === 'rejected' || status === 'abandoned') return 'failed';
-  return 'not-applicable';
-}
 
 async function sleep(ms: number): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, ms));
@@ -49,10 +42,8 @@ function resolveAttestationScore(input: {
   result: 'allow' | 'block';
   reason: string | null;
   executionState: ExecutionState;
-  executionStatus: TradeExecutionStatus | undefined;
 }): number {
   if (input.result === 'allow') {
-    if (input.executionStatus === 'skipped') return 40;
     return input.executionState === 'confirmed' ? 95 : 70;
   }
 
@@ -65,11 +56,9 @@ function resolveOutcome(input: {
   result: 'allow' | 'block';
   reason: string | null;
   executionState: ExecutionState;
-  executionStatus: TradeExecutionStatus | undefined;
 }): EvaluationOutcome | null {
   if (input.result === 'allow') {
     if (input.executionState === 'confirmed') return 'allow_confirmed';
-    if (input.executionStatus === 'rejected') return 'allow_execution_rejected';
     if (input.executionState === 'failed') return 'allow_execution_failed';
     return null;
   }
@@ -246,126 +235,76 @@ export async function evaluateRoutes(app: FastifyInstance) {
           }
 
           let executionState: ExecutionState = 'not-applicable';
-          let executionStatus: TradeExecutionStatus | undefined;
 
           if (response.result === 'allow' && riskIntentForExecution) {
-            try {
-              const skippedKraken = shouldSkipKrakenExecution(body.data.venue);
-
-              if (!skippedKraken) {
-                const pendingValidation = await postValidationRecord({
-                  agentId: BigInt(agent.erc8004TokenId),
-                  evaluationId: response.evaluation_id,
-                  score: resolveAttestationScore({
-                    result: response.result,
-                    reason: response.reason,
-                    executionState: 'unconfirmed',
-                    executionStatus: undefined,
-                  }),
-                  notes: 'Policy evaluation allow; execution submitted/unconfirmed',
-                  checkpointData: {
-                    action_type: body.data.action_type,
-                    venue: body.data.venue,
-                    amount: body.data.amount,
-                    timestamp: Math.floor(Date.now() / 1_000),
-                  },
-                });
-
-                await persistValidationEmission({
-                  evaluationId: response.evaluation_id,
-                  agentTokenId: agent.erc8004TokenId,
-                  validation: pendingValidation,
-                });
-              }
-
-              const execution = await executeTradeIntent({
-                agentId: body.data.agent_id,
-                evaluationId: response.evaluation_id,
+            const pendingValidation = await postValidationRecord({
+              agentId: BigInt(agent.erc8004TokenId),
+              evaluationId: response.evaluation_id,
+              score: resolveAttestationScore({
+                result: response.result,
+                reason: response.reason,
+                executionState: 'unconfirmed',
+              }),
+              notes: 'Policy evaluation allow; execution submitted/unconfirmed',
+              checkpointData: {
+                action_type: body.data.action_type,
                 venue: body.data.venue,
-                riskIntent: riskIntentForExecution,
-                signedIntent: response.eip712_signed_intent as `0x${string}`,
+                amount: body.data.amount,
+                timestamp: Math.floor(Date.now() / 1_000),
+              },
+            });
+
+            await persistValidationEmission({
+              evaluationId: response.evaluation_id,
+              agentTokenId: agent.erc8004TokenId,
+              validation: pendingValidation,
+            });
+
+            try {
+              const execution = await submitTradeIntent({
+                intent: riskIntentForExecution,
+                signature: response.eip712_signed_intent as `0x${string}`,
               });
 
-              executionStatus = execution.status;
-              executionState = mapExecutionStatusToState(execution.status);
+              await prisma.intentEvaluation.update({
+                where: { id: response.evaluation_id },
+                data: {
+                  cycleId: execution.txHash,
+                },
+              });
 
-              if (execution.executionPath === 'risk_router' && execution.executionReference?.startsWith('0x')) {
-                await prisma.intentEvaluation.update({
-                  where: { id: response.evaluation_id },
-                  data: {
-                    cycleId: execution.executionReference,
-                  },
-                });
-              }
+              await waitForTradeIntentConfirmation(execution.txHash);
 
-              if (execution.status === 'confirmed') {
-                const confirmedValidation = await postValidationRecord({
-                  agentId: BigInt(agent.erc8004TokenId),
-                  evaluationId: response.evaluation_id,
-                  score: resolveAttestationScore({
-                    result: response.result,
-                    reason: response.reason,
-                    executionState,
-                    executionStatus,
-                  }),
-                  notes: 'Policy evaluation allow; execution confirmed',
-                  checkpointData: {
-                    action_type: body.data.action_type,
-                    venue: body.data.venue,
-                    amount: body.data.amount,
-                    timestamp: Math.floor(Date.now() / 1_000),
-                  },
-                });
+              executionState = 'confirmed';
 
-                await persistValidationEmission({
-                  evaluationId: response.evaluation_id,
-                  agentTokenId: agent.erc8004TokenId,
-                  validation: confirmedValidation,
-                });
-              } else if (execution.status === 'skipped') {
-                const skippedValidation = await postValidationRecord({
-                  agentId: BigInt(agent.erc8004TokenId),
-                  evaluationId: response.evaluation_id,
-                  score: resolveAttestationScore({
-                    result: response.result,
-                    reason: execution.reason,
-                    executionState,
-                    executionStatus,
-                  }),
-                  notes: execution.reason ?? 'Policy evaluation allow; execution skipped',
-                  checkpointData: {
-                    action_type: body.data.action_type,
-                    venue: body.data.venue,
-                    amount: body.data.amount,
-                    timestamp: Math.floor(Date.now() / 1_000),
-                  },
-                });
+              const confirmedValidation = await postValidationRecord({
+                agentId: BigInt(agent.erc8004TokenId),
+                evaluationId: response.evaluation_id,
+                score: resolveAttestationScore({
+                  result: response.result,
+                  reason: response.reason,
+                  executionState,
+                }),
+                notes: 'Policy evaluation allow; execution confirmed on-chain',
+                checkpointData: {
+                  action_type: body.data.action_type,
+                  venue: body.data.venue,
+                  amount: body.data.amount,
+                  timestamp: Math.floor(Date.now() / 1_000),
+                },
+              });
 
-                await persistValidationEmission({
-                  evaluationId: response.evaluation_id,
-                  agentTokenId: agent.erc8004TokenId,
-                  validation: skippedValidation,
-                });
-              }
-
-              if (execution.status !== 'confirmed') {
-                app.log.warn(
-                  {
-                    evaluation_id: response.evaluation_id,
-                    execution_status: execution.status,
-                    execution_reason: execution.reason,
-                    execution_error_code: execution.errorCode,
-                  },
-                  'Execution did not confirm',
-                );
-              }
+              await persistValidationEmission({
+                evaluationId: response.evaluation_id,
+                agentTokenId: agent.erc8004TokenId,
+                validation: confirmedValidation,
+              });
             } catch (executionError) {
               executionState = 'failed';
-              executionStatus = 'failed';
-              app.log.error({ err: executionError, evaluation_id: response.evaluation_id }, 'Execution router failed');
+              app.log.error({ err: executionError, evaluation_id: response.evaluation_id }, 'RiskRouter execution failed');
               await captureErrorToSentry({
                 error: executionError,
-                tags: { stage: 'execution_router' },
+                tags: { stage: 'riskrouter_execution' },
                 context: {
                   evaluation_id: response.evaluation_id,
                   agent_id: body.data.agent_id,
@@ -381,7 +320,6 @@ export async function evaluateRoutes(app: FastifyInstance) {
                 result: response.result,
                 reason: response.reason,
                 executionState,
-                executionStatus,
               }),
               notes: 'Policy evaluation allow; no on-chain RiskRouter execution for this action type',
               checkpointData: {
@@ -423,7 +361,6 @@ export async function evaluateRoutes(app: FastifyInstance) {
                 result: response.result,
                 reason: response.reason,
                 executionState,
-                executionStatus,
               }),
               notes: `Policy block: ${response.reason ?? 'blocked by policy'}`,
               checkpointData: {
@@ -457,7 +394,6 @@ export async function evaluateRoutes(app: FastifyInstance) {
             result: response.result,
             reason: response.reason,
             executionState,
-            executionStatus,
           });
 
           if (!outcome) return;

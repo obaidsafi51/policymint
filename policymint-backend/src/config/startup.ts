@@ -1,44 +1,6 @@
-import { accessSync, constants } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { privateKeyToAccount } from 'viem/accounts';
 import { env } from './env.js';
 import { logger } from '../lib/logger.js';
-import { setKrakenCliReadiness } from '../exchange/kraken-readiness.js';
-
-function checkKrakenCliReadiness(): { ready: boolean; reason: string | null } {
-  try {
-    accessSync(env.KRAKEN_CLI_PATH, constants.X_OK);
-  } catch {
-    return {
-      ready: false,
-      reason: `Kraken CLI not executable at path: ${env.KRAKEN_CLI_PATH}`,
-    };
-  }
-
-  const version = spawnSync(env.KRAKEN_CLI_PATH, ['--version'], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    encoding: 'utf8',
-  });
-
-  if (version.error) {
-    return {
-      ready: false,
-      reason: `Kraken CLI --version failed: ${version.error.message}`,
-    };
-  }
-
-  if (version.status !== 0) {
-    return {
-      ready: false,
-      reason: `Kraken CLI --version exited with status ${version.status}`,
-    };
-  }
-
-  return {
-    ready: true,
-    reason: null,
-  };
-}
 
 export function validateStartupConfiguration(): void {
   const missingContracts: string[] = [];
@@ -82,19 +44,6 @@ export function validateStartupConfiguration(): void {
   const operatorAddress = privateKeyToAccount(env.OPERATOR_WALLET_PRIVATE_KEY as `0x${string}`).address;
   const agentAddress = privateKeyToAccount(env.AGENT_WALLET_PRIVATE_KEY as `0x${string}`).address;
 
-  const krakenCli = checkKrakenCliReadiness();
-  setKrakenCliReadiness({ ready: krakenCli.ready, reason: krakenCli.reason });
-
-  if (env.KRAKEN_EXECUTION_ENABLED && !krakenCli.ready) {
-    logger.warn(
-      {
-        kraken_cli_path: env.KRAKEN_CLI_PATH,
-        reason: krakenCli.reason,
-      },
-      'KRAKEN_EXECUTION_ENABLED=true but Kraken CLI is not ready; Kraken execution path will be skipped at runtime',
-    );
-  }
-
   if (operatorAddress.toLowerCase() === agentAddress.toLowerCase()) {
     throw new Error('Invalid wallet config: operatorWallet and agentWallet must be different addresses');
   }
@@ -106,12 +55,6 @@ export function validateStartupConfiguration(): void {
         agentWallet: agentAddress,
         sameWallet: false,
         strategyTickIntervalMs: env.STRATEGY_TICK_INTERVAL_MS,
-        kraken: {
-          cliPath: env.KRAKEN_CLI_PATH,
-          paperTrading: env.KRAKEN_PAPER_TRADING,
-          executionEnabled: env.KRAKEN_EXECUTION_ENABLED,
-          cliReady: krakenCli.ready,
-        },
         contracts: {
           identityRegistry: env.IDENTITY_REGISTRY_ADDRESS ?? env.AGENT_REGISTRY_ADDRESS,
           riskRouter: env.RISK_ROUTER_ADDRESS,

@@ -8,57 +8,20 @@ import { formatAddress } from '@/lib/formatAddress';
 
 interface RegistrationSuccessProps {
   registrationId?: string;
-  agentUuid: string;
-  erc8004TokenId: string | null;
-  registrationTxHash: string | null;
-  vaultClaimTxHash: string | null;
-  vaultClaimStatus: 'claimed' | 'pending_retry' | 'skipped';
-  vaultClaimError: string | null;
+  agentId: string;
   apiKey: string;
   txHashes?: string[];
   chainId?: number;
-  onRetryVaultClaim?: () => Promise<void>;
 }
 
-export function RegistrationSuccess({
-  registrationId,
-  agentUuid,
-  erc8004TokenId,
-  registrationTxHash,
-  vaultClaimTxHash,
-  vaultClaimStatus,
-  vaultClaimError,
-  apiKey,
-  txHashes = [],
-  chainId,
-  onRetryVaultClaim,
-}: RegistrationSuccessProps) {
+export function RegistrationSuccess({ registrationId, agentId, apiKey, txHashes = [], chainId }: RegistrationSuccessProps) {
   const [showApiKey, setShowApiKey] = useState(false);
-  const [retryingVaultClaim, setRetryingVaultClaim] = useState(false);
-  const [retryError, setRetryError] = useState<string | null>(null);
 
   async function copyText(value: string) {
     try {
       await navigator.clipboard.writeText(value);
     } catch {
       // no-op
-    }
-  }
-
-  async function handleRetryVaultClaim() {
-    if (!onRetryVaultClaim) {
-      return;
-    }
-
-    setRetryingVaultClaim(true);
-    setRetryError(null);
-
-    try {
-      await onRetryVaultClaim();
-    } catch (error) {
-      setRetryError(error instanceof Error ? error.message : 'Retry vault claim failed');
-    } finally {
-      setRetryingVaultClaim(false);
     }
   }
 
@@ -70,41 +33,19 @@ export function RegistrationSuccess({
       <h2 className="mt-4 font-headline text-4xl font-extrabold text-[var(--text-primary)]">Registration Successful</h2>
       <p className="mt-2 text-sm text-[var(--text-secondary)]">Agent has been minted on-chain and registered to your operator console.</p>
 
-      <span className="mt-3 inline-flex rounded-md bg-[var(--bg-success)] px-2 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-success)]">
-        Agent Active
-      </span>
-
       <div className="mt-5 space-y-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] p-3">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs uppercase tracking-[0.12em] text-[var(--text-tertiary)]">Agent UUID</span>
+          <span className="text-xs uppercase tracking-[0.12em] text-[var(--text-tertiary)]">Agent ID</span>
           <button
             type="button"
-            onClick={() => copyText(agentUuid)}
+            onClick={() => copyText(agentId)}
             className="focus-ring inline-flex items-center gap-1 rounded px-1 text-xs text-[var(--text-secondary)] hover:text-[var(--text-brand)]"
           >
             <Copy size={12} /> Copy
           </button>
         </div>
-        <p className="font-mono text-xs text-[var(--text-primary)]">{agentUuid}</p>
+        <p className="font-mono text-xs text-[var(--text-primary)]">{formatAddress(agentId)}</p>
       </div>
-
-      {erc8004TokenId ? (
-        <div className="mt-3 space-y-1 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] p-3">
-          <span className="text-xs uppercase tracking-[0.1em] text-[var(--text-tertiary)]">On-chain Agent ID (uint256)</span>
-          <p className="font-mono text-xs text-[var(--text-primary)]">{erc8004TokenId}</p>
-          {registrationTxHash ? (
-            <a
-              href={txExplorerLink(registrationTxHash, chainId)}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-[var(--text-info)] hover:underline"
-            >
-              AgentRegistered event
-              <ExternalLink size={14} className="text-[var(--text-secondary)]" />
-            </a>
-          ) : null}
-        </div>
-      ) : null}
 
       {registrationId ? (
         <div className="mt-3 space-y-1 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] p-3">
@@ -168,40 +109,6 @@ export function RegistrationSuccess({
               </div>
             ))}
           </div>
-        </div>
-      ) : null}
-
-      {vaultClaimStatus === 'pending_retry' ? (
-        <div className="mt-3 rounded-lg border border-[var(--text-warning)] bg-[var(--bg-card)] p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-warning)]">Vault Claim Needs Retry</p>
-          <p className="mt-1 text-xs text-[var(--text-secondary)]">Registration succeeded, but sandbox capital claim failed.</p>
-          {vaultClaimError ? <p className="mt-1 text-xs text-[var(--text-secondary)]">{vaultClaimError}</p> : null}
-          {retryError ? <p className="mt-1 text-xs text-[var(--text-danger)]">{retryError}</p> : null}
-          {onRetryVaultClaim ? (
-            <button
-              type="button"
-              onClick={() => void handleRetryVaultClaim()}
-              disabled={retryingVaultClaim}
-              className="focus-ring mt-2 inline-flex h-8 items-center rounded-md border border-[var(--border-default)] px-3 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] disabled:opacity-60"
-            >
-              {retryingVaultClaim ? 'Retrying…' : 'Retry Vault Claim'}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      {vaultClaimTxHash ? (
-        <div className="mt-3 space-y-1 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] p-3">
-          <span className="text-xs uppercase tracking-[0.1em] text-[var(--text-tertiary)]">Vault Claim Transaction</span>
-          <a
-            href={txExplorerLink(vaultClaimTxHash, chainId)}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 font-mono text-xs text-[var(--text-info)] hover:underline"
-          >
-            {formatAddress(vaultClaimTxHash)}
-            <ExternalLink size={16} className="text-[var(--text-secondary)]" />
-          </a>
         </div>
       ) : null}
 

@@ -25,7 +25,6 @@ model Agent {
   registrationTxHash String?            @map("registration_tx_hash")
   vaultClaimedAt     DateTime?          @map("vault_claimed_at")
   evaluations        IntentEvaluation[]
-  tradeExecutions    TradeExecution[]
   policies           Policy[]
   reputationSignals  ReputationSignal[]
 
@@ -73,39 +72,11 @@ model IntentEvaluation {
   agent              Agent              @relation(fields: [agentId], references: [id])
   policy             Policy?            @relation(fields: [policyId], references: [id])
   validationRecords  ValidationRecord[]
-  tradeExecution     TradeExecution?
 
   @@index([agentId, createdAt(sort: Desc)])
   @@index([agentId, result])
   @@index([cycleId])
   @@map("intent_evaluations")
-}
-
-model TradeExecution {
-  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  agentId         String           @map("agent_id") @db.Uuid
-  evaluationId    String           @unique @map("evaluation_id") @db.Uuid
-  executionPath   String           @map("execution_path")
-  status          String
-  pair            String
-  action          String
-  amountUsdScaled BigInt           @map("amount_usd_scaled")
-  fillPrice       Decimal?         @map("fill_price") @db.Decimal(20, 8)
-  fillVolume      Decimal?         @map("fill_volume") @db.Decimal(20, 8)
-  realizedPnlUsd  Decimal?         @map("realized_pnl_usd") @db.Decimal(20, 8)
-  orderId         String?          @map("order_id")
-  rawResponse     Json?            @map("raw_response")
-  executedAt      DateTime         @default(now()) @map("executed_at")
-  confirmedAt     DateTime?        @map("confirmed_at")
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
-  agent           Agent            @relation(fields: [agentId], references: [id])
-  evaluation      IntentEvaluation @relation(fields: [evaluationId], references: [id])
-
-  @@index([agentId, createdAt(sort: Desc)])
-  @@index([agentId, status])
-  @@index([evaluationId])
-  @@map("trade_executions")
 }
 
 model ValidationRecord {

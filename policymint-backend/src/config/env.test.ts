@@ -22,11 +22,8 @@ const validEnv = {
   STRATEGY_TICK_INTERVAL_MS: '450000',
   INTERNAL_SERVICE_KEY: 'test-internal-service-key-at-least-32-characters',
   KRAKEN_CLI_PATH: 'kraken',
-  KRAKEN_PAPER_TRADING: 'true',
-  KRAKEN_EXECUTION_ENABLED: 'false',
   STRATEGY_TRADE_AMOUNT_USD: '100',
   AGENT_ID: '018f5f93-1ecf-7cc0-bf2f-0d72f12a9c1b',
-  HACKATHON_START_TS: '2026-04-01T00:00:00.000Z',
 };
 
 async function importEnvModule() {
