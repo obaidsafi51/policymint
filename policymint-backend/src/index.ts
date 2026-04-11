@@ -72,6 +72,7 @@ async function ensureStartupAgentRegistered(agentUuid: string, appLog: { info: F
 
   try {
     const registration = await registerAgentOnChain({
+      agentWalletAddress: agentAccount.address,
       name: CANONICAL_AGENT_NAME,
       description: CANONICAL_AGENT_DESCRIPTION,
       capabilities: [...CANONICAL_AGENT_CAPABILITIES],

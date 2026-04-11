@@ -1,9 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../../db/client.js';
-import { canRegisterAgentOnChain, registerAgentOnChain } from '../../lib/blockchain/agentRegistry.js';
+import {
+  canRegisterAgentOnChain,
+  findRegisteredAgentByWallet,
+  registerAgentOnChain,
+} from '../../lib/blockchain/agentRegistry.js';
 import { claimHackathonAllocation } from '../../lib/blockchain/hackathonVault.js';
-import { agentAccount, operatorAccount } from '../../lib/blockchain/client.js';
 import { generateApiKey } from '../../lib/crypto.js';
 import { generateId } from '../../lib/uuid.js';
 import { operatorJwtAuth } from '../../plugins/operator-auth.js';
@@ -99,6 +102,14 @@ function completeRegistrationJob(job: RegistrationJob) {
   }
 }
 
+function isAgentWalletAlreadyRegisteredError(err: unknown): boolean {
+  if (!(err instanceof Error)) {
+    return false;
+  }
+
+  return err.message.toLowerCase().includes('agentwallet already registered');
+}
+
 async function processRegistrationJob(
   app: FastifyInstance,
   job: RegistrationJob,
@@ -166,20 +177,40 @@ async function processRegistrationJob(
       const agentURI = buildCanonicalAgentURI(frontendUrl);
       const strategyCapability = `strategy:${input.strategyType.toLowerCase()}`;
 
-      const { agentId, txHash } = await registerAgentOnChain({
-        name: input.name,
-        description: input.description?.trim() || CANONICAL_AGENT_DESCRIPTION,
-        capabilities: [...CANONICAL_AGENT_CAPABILITIES, strategyCapability],
-        agentURI,
-      });
+      let registrationTxHash: `0x${string}` | null = null;
+      let registrationMessage = 'Agent identity registered on Ethereum Sepolia';
 
-      onChainAgentId = agentId;
+      try {
+        const { agentId, txHash } = await registerAgentOnChain({
+          agentWalletAddress: input.walletAddress as `0x${string}`,
+          name: input.name,
+          description: input.description?.trim() || CANONICAL_AGENT_DESCRIPTION,
+          capabilities: [...CANONICAL_AGENT_CAPABILITIES, strategyCapability],
+          agentURI,
+        });
+
+        onChainAgentId = agentId;
+        registrationTxHash = txHash;
+      } catch (err) {
+        if (!isAgentWalletAlreadyRegisteredError(err)) {
+          throw err;
+        }
+
+        const existingRegistration = await findRegisteredAgentByWallet(input.walletAddress as `0x${string}`);
+        if (!existingRegistration) {
+          throw new Error('Agent wallet is already registered on-chain, but agentId could not be resolved from logs');
+        }
+
+        onChainAgentId = existingRegistration.agentId;
+        registrationTxHash = existingRegistration.txHash;
+        registrationMessage = 'Agent wallet already registered on-chain; reusing existing identity';
+      }
 
       const updatedAgent = await prisma.agent.update({
         where: { id: createdAgent.id },
         data: {
-          erc8004TokenId: agentId.toString(),
-          registrationTxHash: txHash,
+          erc8004TokenId: onChainAgentId.toString(),
+          ...(registrationTxHash ? { registrationTxHash } : {}),
         },
         select: {
           id: true,
@@ -194,8 +225,8 @@ async function processRegistrationJob(
         stepNumber: 2,
         stepLabel: 'Registering on-chain identity',
         status: 'done',
-        message: 'Agent identity registered on Ethereum Sepolia',
-        txHash,
+        message: registrationMessage,
+        ...(registrationTxHash ? { txHash: registrationTxHash } : {}),
       });
     } else {
       emitRegistrationEvent(job, {
@@ -341,8 +372,7 @@ export async function agentRoutes(app: FastifyInstance) {
     }
 
     return reply.send({
-      operatorWallet: operatorAccount.address,
-      agentWallet: agentAccount.address,
+      operatorWallet: request.operatorContext.operatorWallet,
       contract: 'AgentRegistry',
     });
   });
@@ -350,14 +380,6 @@ export async function agentRoutes(app: FastifyInstance) {
   app.post('/register', { preHandler: operatorJwtAuth }, async (request, reply) => {
     if (!request.operatorContext) {
       return reply.status(401).send({ error: 'Operator authentication required' });
-    }
-
-    const expectedOperatorWallet = operatorAccount.address.toLowerCase();
-    if (request.operatorContext.operatorWallet.toLowerCase() !== expectedOperatorWallet) {
-      return reply.status(403).send({
-        error: 'Connected SIWE wallet is not the configured operator wallet',
-        operatorWallet: operatorAccount.address,
-      });
     }
 
     const body = RegisterAgentSchema.safeParse(request.body);
@@ -401,14 +423,6 @@ export async function agentRoutes(app: FastifyInstance) {
       return reply.status(401).send({ error: 'Operator authentication required' });
     }
 
-    const expectedOperatorWallet = operatorAccount.address.toLowerCase();
-    if (request.operatorContext.operatorWallet.toLowerCase() !== expectedOperatorWallet) {
-      return reply.status(403).send({
-        error: 'Connected SIWE wallet is not the configured operator wallet',
-        operatorWallet: operatorAccount.address,
-      });
-    }
-
     const parsedParams = AgentIdParamsSchema.safeParse(request.params);
     if (!parsedParams.success) {
       return reply.status(422).send({ error: parsedParams.error.flatten() });
@@ -426,10 +440,6 @@ export async function agentRoutes(app: FastifyInstance) {
 
     if (!agent) {
       return reply.status(404).send({ error: 'Agent not found' });
-    }
-
-    if (agent.walletAddress.toLowerCase() !== request.operatorContext.operatorWallet.toLowerCase()) {
-      return reply.status(403).send({ error: 'Operator is not authorized for this agent' });
     }
 
     if (!agent.erc8004TokenId) {
@@ -533,18 +543,34 @@ export async function agentRoutes(app: FastifyInstance) {
     if (canRegisterAgentOnChain()) {
       const frontendUrl = process.env.POLICYMINT_FRONTEND_URL ?? 'https://your-vercel-frontend-url.vercel.app';
       const agentURI = buildCanonicalAgentURI(frontendUrl);
-      let onChainRegistration: { agentId: bigint; txHash: `0x${string}` } | null = null;
+      let onChainRegistration: { agentId: bigint; txHash: `0x${string}` | null } | null = null;
       const strategyCapability = `strategy:${body.data.strategyType.toLowerCase()}`;
 
       try {
         onChainRegistration = await registerAgentOnChain({
+          agentWalletAddress: body.data.walletAddress as `0x${string}`,
           name: body.data.name,
           description: body.data.description?.trim() || CANONICAL_AGENT_DESCRIPTION,
           capabilities: [...CANONICAL_AGENT_CAPABILITIES, strategyCapability],
           agentURI,
         });
       } catch (err) {
-        app.log.error({ err, agent_id: result.agent.id }, 'On-chain agent registration failed');
+        if (isAgentWalletAlreadyRegisteredError(err)) {
+          const existingRegistration = await findRegisteredAgentByWallet(body.data.walletAddress as `0x${string}`);
+          if (existingRegistration) {
+            onChainRegistration = {
+              agentId: existingRegistration.agentId,
+              txHash: existingRegistration.txHash,
+            };
+          } else {
+            app.log.warn(
+              { err, agent_id: result.agent.id },
+              'On-chain register reverted as already-registered, but no prior registration log was found',
+            );
+          }
+        } else {
+          app.log.error({ err, agent_id: result.agent.id }, 'On-chain agent registration failed');
+        }
       }
 
       if (onChainRegistration) {
@@ -562,7 +588,7 @@ export async function agentRoutes(app: FastifyInstance) {
           where: { id: result.agent.id },
           data: {
             erc8004TokenId: agentId.toString(),
-            registrationTxHash: txHash,
+            ...(txHash ? { registrationTxHash: txHash } : {}),
           },
           select: agentResponseSelect,
         } as never);

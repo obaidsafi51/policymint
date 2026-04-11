@@ -17,6 +17,9 @@ export type AgentRegistrationFormValues = z.infer<typeof registrationSchema>;
 interface AgentRegistrationFormProps {
   operatorWallet: string;
   agentWallet: string;
+  onLoadAgentWallet: () => void;
+  isLoadingAgentWallet?: boolean;
+  agentWalletError?: string;
   isSubmitting: boolean;
   isSubmitDisabled?: boolean;
   submitError?: string;
@@ -27,6 +30,9 @@ interface AgentRegistrationFormProps {
 export function AgentRegistrationForm({
   operatorWallet,
   agentWallet,
+  onLoadAgentWallet,
+  isLoadingAgentWallet,
+  agentWalletError,
   isSubmitting,
   isSubmitDisabled,
   submitError,
@@ -96,11 +102,23 @@ export function AgentRegistrationForm({
 
       <label className="block text-[11px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">
         Agent wallet (on-chain identity)
-        <input
-          readOnly
-          value={agentWallet}
-          className="mt-1 h-8 w-full rounded-md border border-[var(--border-default)] bg-[var(--bg-card)] px-3 font-mono text-xs text-[var(--text-secondary)]"
-        />
+        <div className="mt-1 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onLoadAgentWallet}
+            disabled={isLoadingAgentWallet || isSubmitting}
+            className="focus-ring inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-default)] bg-[var(--bg-card)] px-3 text-[10px] font-semibold tracking-[0.08em] text-[var(--text-primary)] hover:border-[var(--border-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoadingAgentWallet ? 'Loading…' : 'Load from MetaMask'}
+          </button>
+
+          <input
+            readOnly
+            value={agentWallet}
+            className="h-8 w-full rounded-md border border-[var(--border-default)] bg-[var(--bg-card)] px-3 font-mono text-xs text-[var(--text-secondary)]"
+          />
+        </div>
+        {agentWalletError ? <span className="mt-1 block text-[11px] text-[var(--text-danger)]">{agentWalletError}</span> : null}
       </label>
 
       <div className="space-y-2">

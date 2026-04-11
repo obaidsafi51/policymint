@@ -91,6 +91,21 @@ async function tryRefreshSession(request: NextRequest, backendBaseUrl: string): 
 async function handleProxy(request: NextRequest, context: { params: Promise<{ path?: string[] }> }) {
   const backendBaseUrl = getBackendUrl();
   const jwtSecret = getJwtSecret();
+  const requestOrigin = request.nextUrl.origin;
+
+  if (backendBaseUrl === requestOrigin) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'PROXY_BACKEND_URL_INVALID',
+          message: 'BACKEND_URL must point to backend service, not this Next.js origin',
+        },
+      },
+      { status: 500 },
+    );
+  }
+
   const { path } = await context.params;
   const proxyPath = buildForwardPath(path);
   const targetUrl = new URL(`${backendBaseUrl}/${proxyPath}`);

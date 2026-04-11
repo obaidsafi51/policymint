@@ -15,7 +15,9 @@ export default function RegisterAgentPage() {
   const chainId = useChainId();
   const { address: sessionAddress, authenticated } = useAuth();
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [config, setConfig] = useState<{ operatorWallet: string; agentWallet: string } | null>(null);
+  const [agentWallet, setAgentWallet] = useState<string>('');
+  const [agentWalletError, setAgentWalletError] = useState<string | null>(null);
+  const [isLoadingAgentWallet, setIsLoadingAgentWallet] = useState(false);
   const {
     phase,
     steps,
@@ -32,41 +34,71 @@ export default function RegisterAgentPage() {
 
   useEffect(() => {
     if (!authenticated) {
-      setConfig(null);
+      setAgentWallet('');
+      setAgentWalletError(null);
+      return;
+    }
+  }, [authenticated]);
+
+  async function loadAgentWalletFromMetaMask() {
+    if (typeof window === 'undefined' || !(window as Window & { ethereum?: { request: (args: { method: string }) => Promise<string[]> } }).ethereum) {
+      setAgentWalletError('MetaMask is not available in this browser.');
       return;
     }
 
-    let cancelled = false;
+    setIsLoadingAgentWallet(true);
+    setAgentWalletError(null);
 
-    const loadConfig = async () => {
-      try {
-        const response = await fetch('/api/proxy/v1/agents/register/config', {
-          method: 'GET',
-          credentials: 'include',
-        });
+    try {
+      const ethereum = (window as Window & { ethereum: { request: (args: { method: string }) => Promise<string[]> } }).ethereum;
 
-        if (!response.ok) {
+      const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+      const normalizedAccounts = accounts.map((account) => account.toLowerCase());
+      if (normalizedAccounts.length === 0) {
+        setAgentWalletError('No wallet accounts were returned by MetaMask.');
+        return;
+      }
+
+      let selectedAgentWallet = normalizedAccounts[0];
+
+      if (normalizedAccounts.length > 1) {
+        const options = normalizedAccounts
+          .map((account, index) => `${index + 1}. ${account}${account === walletAddress.toLowerCase() ? ' (operator)' : ''}`)
+          .join('\n');
+
+        const answer = window.prompt(
+          `Choose MetaMask account number for Agent Wallet:\n\n${options}\n\nEnter number:`,
+          '2',
+        );
+
+        if (!answer) {
+          setAgentWalletError('Agent wallet selection was cancelled.');
           return;
         }
 
-        const data = (await response.json()) as { operatorWallet?: string; agentWallet?: string };
-        if (!cancelled && data.operatorWallet && data.agentWallet) {
-          setConfig({
-            operatorWallet: data.operatorWallet,
-            agentWallet: data.agentWallet,
-          });
+        const selectedIndex = Number(answer.trim()) - 1;
+        if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= normalizedAccounts.length) {
+          setAgentWalletError('Invalid account selection. Please try again.');
+          return;
         }
-      } catch {
-        // no-op
+
+        selectedAgentWallet = normalizedAccounts[selectedIndex];
       }
-    };
 
-    void loadConfig();
+      setAgentWallet(selectedAgentWallet);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [authenticated]);
+      if (selectedAgentWallet === walletAddress.toLowerCase()) {
+        setAgentWalletError('Loaded wallet matches operator wallet. Switch MetaMask account if you want a separate agent wallet.');
+        return;
+      }
+
+      setAgentWalletError(null);
+    } catch (error) {
+      setAgentWalletError(error instanceof Error ? error.message : 'Failed to load account from MetaMask.');
+    } finally {
+      setIsLoadingAgentWallet(false);
+    }
+  }
 
   async function submit(values: AgentRegistrationFormValues) {
     if (!walletAddress) {
@@ -74,8 +106,13 @@ export default function RegisterAgentPage() {
       return;
     }
 
-    if (config?.operatorWallet && walletAddress.toLowerCase() !== config.operatorWallet.toLowerCase()) {
-      setSubmitError('SIWE session wallet does not match configured operator wallet.');
+    if (!agentWallet) {
+      setSubmitError('Load an agent wallet from MetaMask before registering.');
+      return;
+    }
+
+    if (agentWallet.toLowerCase() === walletAddress.toLowerCase()) {
+      setSubmitError('Agent wallet must be different from operator wallet.');
       return;
     }
 
@@ -83,7 +120,7 @@ export default function RegisterAgentPage() {
 
     await register({
       ...values,
-      walletAddress,
+      walletAddress: agentWallet,
       chainId: chainId || 11155111,
     });
   }
@@ -95,9 +132,14 @@ export default function RegisterAgentPage() {
       <section className="relative z-10 w-full overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[color-mix(in_srgb,var(--bg-surface)_82%,transparent)] md:grid md:grid-cols-[1fr_420px]">
         <AgentRegistrationForm
           operatorWallet={walletAddress || 'Connect + sign in wallet to continue'}
-          agentWallet={config?.agentWallet ?? 'Loading agent wallet from backend...'}
+          agentWallet={agentWallet || 'Not loaded yet'}
+          onLoadAgentWallet={() => {
+            void loadAgentWalletFromMetaMask();
+          }}
+          isLoadingAgentWallet={isLoadingAgentWallet}
+          agentWalletError={agentWalletError ?? undefined}
           isSubmitting={isRegistering}
-          isSubmitDisabled={!walletAddress}
+          isSubmitDisabled={!walletAddress || !agentWallet}
           submitError={submitError ?? undefined}
           initialValues={{
             name: 'PolicyMint',

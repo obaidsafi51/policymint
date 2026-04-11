@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OPERATOR_SESSION_COOKIE_NAME } from '@/lib/auth/constants';
-import { decodeOperatorJwt } from '@/lib/auth/operator-jwt';
+import { decodeOperatorJwt } from '@/lib/auth/operator-jwt-payload';
 
 export async function middleware(request: NextRequest) {
   const token = request.cookies.get(OPERATOR_SESSION_COOKIE_NAME)?.value;
