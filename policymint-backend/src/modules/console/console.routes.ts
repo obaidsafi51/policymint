@@ -53,6 +53,12 @@ type EvalRow = {
   validationRecords: Array<{ txHash: string; emittedAt: Date }>;
 };
 
+type ConfirmedExecutionRow = {
+  evaluation_id: string;
+  timestamp: Date;
+  realized_pnl_usd: number;
+};
+
 function toEnvelope<T>(agentId: string, data: T) {
   return {
     success: true as const,
@@ -129,9 +135,10 @@ function isExecutionConfirmed(evaluation: EvalRow): boolean {
 }
 
 function getCompetitionWindowStart(): Date | null {
-  if (!env.COMPETITION_WINDOW_START_AT) return null;
+  const startRaw = env.COMPETITION_WINDOW_START_AT ?? env.HACKATHON_START_TS;
+  if (!startRaw) return null;
 
-  const parsed = new Date(env.COMPETITION_WINDOW_START_AT);
+  const parsed = new Date(startRaw);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
 }
@@ -260,6 +267,35 @@ function buildPnlSeries(input: {
     tradeCount,
     deltas,
   };
+}
+
+async function getConfirmedExecutions(input: {
+  agentId: string;
+  startAt: Date;
+  endAt: Date;
+}): Promise<ConfirmedExecutionRow[]> {
+  const rows = await prisma.$queryRaw<Array<{
+    evaluation_id: string;
+    timestamp: Date;
+    realized_pnl_usd: unknown;
+  }>>`
+    SELECT
+      evaluation_id,
+      COALESCE(confirmed_at, executed_at, created_at) AS timestamp,
+      COALESCE(realized_pnl_usd, 0) AS realized_pnl_usd
+    FROM trade_executions
+    WHERE agent_id = ${input.agentId}::uuid
+      AND status = 'confirmed'
+      AND COALESCE(confirmed_at, executed_at, created_at) >= ${input.startAt}
+      AND COALESCE(confirmed_at, executed_at, created_at) <= ${input.endAt}
+    ORDER BY timestamp ASC
+  `;
+
+  return rows.map(row => ({
+    evaluation_id: row.evaluation_id,
+    timestamp: row.timestamp,
+    realized_pnl_usd: safeNumber(row.realized_pnl_usd) ?? 0,
+  }));
 }
 
 async function requireScopedAgent(request: FastifyRequest, reply: FastifyReply, targetAgentId: string) {
@@ -490,40 +526,43 @@ export async function consoleRoutes(app: FastifyInstance) {
     }
 
     return runRoute(app, request, reply, '/v1/agents/:id/pnl', scopedAgent.id, async () => {
-      const rows = await prisma.intentEvaluation.findMany({
-        where: {
-          agentId: scopedAgent.id,
-          actionType: 'TRADE',
-          createdAt: {
-            gte: window.startAt,
-            lte: window.endAt,
-          },
-        },
-        orderBy: { createdAt: 'asc' },
-        select: {
-          id: true,
-          createdAt: true,
-          result: true,
-          amountRaw: true,
-          tokenIn: true,
-          cycleId: true,
-          intentParams: true,
-          validationRecords: {
-            orderBy: { emittedAt: 'asc' },
-            select: { txHash: true, emittedAt: true },
-          },
-        },
+      const baselineAllocationUsd = env.HACKATHON_BASELINE_ALLOCATION_USD;
+      const confirmedExecutions = await getConfirmedExecutions({
+        agentId: scopedAgent.id,
+        startAt: window.startAt,
+        endAt: window.endAt,
       });
 
-      const baselineAllocationUsd = env.HACKATHON_BASELINE_ALLOCATION_USD;
-      const pnl = buildPnlSeries({ evaluations: rows, startAt: window.startAt });
-      const pnlPct = baselineAllocationUsd > 0 ? (pnl.currentPnlUsd / baselineAllocationUsd) * 100 : 0;
+      let runningTotal = 0;
+      const series = confirmedExecutions.map((row, index) => {
+        runningTotal += row.realized_pnl_usd;
+        return {
+          timestamp: row.timestamp.toISOString(),
+          cumulative_pnl_usd: round2(runningTotal),
+          trade_count: index + 1,
+        };
+      });
 
-      const series = pnl.series.map(point => ({
-        timestamp: point.timestamp,
-        cumulative_pnl_usd: point.cumulative_pnl_usd,
-        trade_count: point.trade_count ?? 0,
-      }));
+      if (series.length === 0) {
+        series.push({
+          timestamp: window.startAt.toISOString(),
+          cumulative_pnl_usd: 0,
+          trade_count: 0,
+        });
+      }
+
+      const nowIso = new Date().toISOString();
+      const latest = series[series.length - 1];
+      if (latest && latest.timestamp !== nowIso) {
+        series.push({
+          timestamp: nowIso,
+          cumulative_pnl_usd: latest.cumulative_pnl_usd,
+          trade_count: latest.trade_count,
+        });
+      }
+
+      const currentPnlUsd = round2(runningTotal);
+      const normalizedPnlPct = baselineAllocationUsd > 0 ? (currentPnlUsd / baselineAllocationUsd) * 100 : 0;
 
       return {
         payload: {
@@ -531,9 +570,9 @@ export async function consoleRoutes(app: FastifyInstance) {
           start_at: window.startAt.toISOString(),
           end_at: window.endAt.toISOString(),
           baseline_allocation_usd: round2(baselineAllocationUsd),
-          current_pnl_usd: pnl.currentPnlUsd,
-          pnl_pct: round2(pnlPct),
-          trade_count: pnl.tradeCount,
+          current_pnl_usd: currentPnlUsd,
+          pnl_pct: round2(normalizedPnlPct),
+          trade_count: confirmedExecutions.length,
           series,
         },
         resultCount: series.length,
@@ -562,10 +601,11 @@ export async function consoleRoutes(app: FastifyInstance) {
       }
 
       return runRoute(app, request, reply, '/v1/agents/:id/drawdown-comparison', scopedAgent.id, async () => {
-        const rows = await prisma.intentEvaluation.findMany({
+        const blockedRows = await prisma.intentEvaluation.findMany({
           where: {
             agentId: scopedAgent.id,
             actionType: 'TRADE',
+            result: EvaluationResult.BLOCK,
             createdAt: {
               gte: window.startAt,
               lte: window.endAt,
@@ -573,23 +613,21 @@ export async function consoleRoutes(app: FastifyInstance) {
           },
           orderBy: { createdAt: 'asc' },
           select: {
-            id: true,
             createdAt: true,
-            result: true,
-            amountRaw: true,
-            tokenIn: true,
             intentParams: true,
-            cycleId: true,
-            validationRecords: {
-              orderBy: { emittedAt: 'asc' },
-              select: { txHash: true, emittedAt: true },
-            },
           },
+        });
+
+        const confirmedExecutions = await getConfirmedExecutions({
+          agentId: scopedAgent.id,
+          startAt: window.startAt,
+          endAt: window.endAt,
         });
 
         let protectedRunning = 0;
         let baselineRunning = 0;
         let blockedTradeCount = 0;
+        let protectedTradeCount = 0;
         const baselineAllocationUsd = env.HACKATHON_BASELINE_ALLOCATION_USD;
 
         const protectedSeries: TimelinePoint[] = [
@@ -608,32 +646,43 @@ export async function consoleRoutes(app: FastifyInstance) {
           },
         ];
 
-        let protectedTradeCount = 0;
+        type TimelineEvent =
+          | { kind: 'confirmed'; timestamp: Date; delta: number }
+          | { kind: 'blocked'; timestamp: Date; amountUsd: number };
 
-        for (const row of rows) {
-          if (row.result === EvaluationResult.ALLOW && isExecutionConfirmed(row as EvalRow)) {
-            const delta = extractRealizedPnlUsd(row.intentParams);
-            protectedRunning += delta;
-            baselineRunning += delta;
+        const timeline: TimelineEvent[] = [
+          ...confirmedExecutions.map(row => ({
+            kind: 'confirmed' as const,
+            timestamp: row.timestamp,
+            delta: row.realized_pnl_usd,
+          })),
+          ...blockedRows.map(row => ({
+            kind: 'blocked' as const,
+            timestamp: row.createdAt,
+            amountUsd: extractAmountUsd(row.intentParams),
+          })),
+        ].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
+
+        for (const event of timeline) {
+          if (event.kind === 'confirmed') {
+            protectedRunning += event.delta;
+            baselineRunning += event.delta;
             protectedTradeCount += 1;
-          }
-
-          if (row.result === EvaluationResult.BLOCK) {
+          } else {
             blockedTradeCount += 1;
-            const amountUsd = extractAmountUsd(row.intentParams);
             const fallbackAmount = baselineAllocationUsd * BLOCKED_TRADE_ASSUMED_LOSS_RATE;
-            const assumedLoss = (amountUsd > 0 ? amountUsd : fallbackAmount) * BLOCKED_TRADE_ASSUMED_LOSS_RATE;
+            const assumedLoss = (event.amountUsd > 0 ? event.amountUsd : fallbackAmount) * BLOCKED_TRADE_ASSUMED_LOSS_RATE;
             baselineRunning -= assumedLoss;
           }
 
           protectedSeries.push({
-            timestamp: row.createdAt.toISOString(),
+            timestamp: event.timestamp.toISOString(),
             cumulative_pnl_usd: round2(protectedRunning),
             trade_count: protectedTradeCount,
           });
 
           baselineSeries.push({
-            timestamp: row.createdAt.toISOString(),
+            timestamp: event.timestamp.toISOString(),
             cumulative_pnl_usd: round2(baselineRunning),
             trade_count: protectedTradeCount + blockedTradeCount,
           });
@@ -670,7 +719,7 @@ export async function consoleRoutes(app: FastifyInstance) {
             simulation_disclaimer:
               'Blocked trades are simulated as executed at requested USD size without slippage/partial-fill modeling. This is a best-effort comparison, not a full backtest.',
           },
-          resultCount: rows.length,
+          resultCount: timeline.length,
         };
       });
     },
@@ -688,28 +737,18 @@ export async function consoleRoutes(app: FastifyInstance) {
         totalEvaluations,
         allowCount,
         blockCount,
-        tradeRows,
+        allowTradeCount,
         emittedValidationCount,
         reputationRows,
       ] = await Promise.all([
         prisma.intentEvaluation.count({ where: { agentId: scopedAgent.id } }),
         prisma.intentEvaluation.count({ where: { agentId: scopedAgent.id, result: EvaluationResult.ALLOW } }),
         prisma.intentEvaluation.count({ where: { agentId: scopedAgent.id, result: EvaluationResult.BLOCK } }),
-        prisma.intentEvaluation.findMany({
-          where: { agentId: scopedAgent.id, actionType: 'TRADE' },
-          orderBy: { createdAt: 'asc' },
-          select: {
-            id: true,
-            createdAt: true,
-            result: true,
-            amountRaw: true,
-            tokenIn: true,
-            intentParams: true,
-            cycleId: true,
-            validationRecords: {
-              select: { txHash: true, emittedAt: true },
-              orderBy: { emittedAt: 'asc' },
-            },
+        prisma.intentEvaluation.count({
+          where: {
+            agentId: scopedAgent.id,
+            actionType: 'TRADE',
+            result: EvaluationResult.ALLOW,
           },
         }),
         prisma.validationRecord.findMany({
@@ -735,9 +774,16 @@ export async function consoleRoutes(app: FastifyInstance) {
         }),
       ]);
 
-      const allowTradeCount = tradeRows.filter(row => row.result === EvaluationResult.ALLOW).length;
-      const confirmedTradeRows = tradeRows.filter(row => row.result === EvaluationResult.ALLOW && isExecutionConfirmed(row as EvalRow));
-      const executionSuccessRate = allowTradeCount > 0 ? (confirmedTradeRows.length / allowTradeCount) * 100 : 0;
+      const confirmedExecutions = await prisma.$queryRaw<Array<{ realized_pnl_usd: unknown }>>`
+        SELECT COALESCE(realized_pnl_usd, 0) AS realized_pnl_usd
+        FROM trade_executions
+        WHERE agent_id = ${scopedAgent.id}::uuid
+          AND status = 'confirmed'
+        ORDER BY COALESCE(confirmed_at, executed_at, created_at) ASC
+      `;
+
+      const confirmedTradeCount = confirmedExecutions.length;
+      const executionSuccessRate = allowTradeCount > 0 ? (confirmedTradeCount / allowTradeCount) * 100 : 0;
       const emissionSuccessRate = totalEvaluations > 0 ? (emittedValidationCount.length / totalEvaluations) * 100 : 0;
       const blockRatePct = totalEvaluations > 0 ? (blockCount / totalEvaluations) * 100 : 0;
 
@@ -757,7 +803,7 @@ export async function consoleRoutes(app: FastifyInstance) {
         }
       }
 
-      const tradePnls = confirmedTradeRows.map(row => extractRealizedPnlUsd(row.intentParams));
+      const tradePnls = confirmedExecutions.map(row => safeNumber(row.realized_pnl_usd) ?? 0);
       const sharpeEligible = tradePnls.length >= 3;
       const tradePnlStddev = stddev(tradePnls);
 
@@ -772,8 +818,8 @@ export async function consoleRoutes(app: FastifyInstance) {
       let running = 0;
       let peak = 0;
 
-      for (const row of confirmedTradeRows) {
-        running += extractRealizedPnlUsd(row.intentParams);
+      for (const delta of tradePnls) {
+        running += delta;
         if (running > peak) peak = running;
       }
 
