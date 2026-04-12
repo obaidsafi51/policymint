@@ -24,6 +24,7 @@ model Agent {
   updatedAt          DateTime           @updatedAt @map("updated_at")
   registrationTxHash String?            @map("registration_tx_hash")
   vaultClaimedAt     DateTime?          @map("vault_claimed_at")
+  deployerWalletAddress  String?        @map("deployer_wallet_address")
   evaluations        IntentEvaluation[]
   tradeExecutions    TradeExecution[]
   policies           Policy[]
