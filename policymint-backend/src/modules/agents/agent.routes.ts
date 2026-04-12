@@ -114,6 +114,7 @@ async function processRegistrationJob(
   app: FastifyInstance,
   job: RegistrationJob,
   input: z.infer<typeof RegisterAgentSchema>,
+  operatorWallet?: string,
 ) {
   let currentStepNumber = 1;
   let currentStepLabel = 'Saving agent to database';
@@ -145,10 +146,15 @@ async function processRegistrationJob(
     });
 
     const temporaryApiKey = await generateApiKey();
-    createdAgent = await createAgentRecord(input, {
-      hash: temporaryApiKey.hash,
-      prefix: temporaryApiKey.prefix,
-    });
+    createdAgent = await createAgentRecord(
+      input,
+      {
+        hash: temporaryApiKey.hash,
+        prefix: temporaryApiKey.prefix,
+      },
+      undefined,
+      operatorWallet
+    );
 
     responseAgent = {
       id: createdAgent.id,
@@ -413,7 +419,7 @@ export async function agentRoutes(app: FastifyInstance) {
     const job = createRegistrationJob(registrationId);
     registrationJobs.set(registrationId, job);
 
-    void processRegistrationJob(app, job, body.data);
+    void processRegistrationJob(app, job, body.data, request.operatorContext.operatorWallet);
 
     return reply.status(202).send({ registrationId });
   });

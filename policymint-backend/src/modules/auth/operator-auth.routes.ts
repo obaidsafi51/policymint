@@ -118,7 +118,7 @@ function parseSiweMessage(rawMessage: string): {
 async function resolveAgentIdsForWallet(walletAddress: string): Promise<string[]> {
   const agents = await prisma.agent.findMany({
     where: {
-      walletAddress: walletAddress.toLowerCase(),
+      deployerWalletAddress: walletAddress.toLowerCase(),
       isActive: true,
     },
     select: {
